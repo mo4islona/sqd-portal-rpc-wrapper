@@ -69,6 +69,24 @@ describe('server', () => {
     await server.close();
   });
 
+  it('accepts valid wrapper api key', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      WRAPPER_API_KEY: 'secret'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json', 'x-api-key': 'secret' },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
+    });
+    expect(res.statusCode).toBe(200);
+    await server.close();
+  });
+
   it('skips response for notifications', async () => {
     const config = loadConfig({
       SERVICE_MODE: 'single',
@@ -83,6 +101,162 @@ describe('server', () => {
       payload: JSON.stringify({ jsonrpc: '2.0', method: 'eth_chainId', params: [] })
     });
     expect(res.statusCode).toBe(204);
+    await server.close();
+  });
+
+  it('handles multi chain path', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'multi'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/evm/1',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
+    });
+    expect(res.statusCode).toBe(200);
+    await server.close();
+  });
+
+  it('uses dataset map chain id in single mode', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET_MAP: '{"10":"optimism-mainnet"}'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.result).toBe('0xa');
+    await server.close();
+  });
+
+  it('returns 404 for chain path in single mode', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/evm/1',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
+    });
+    expect(res.statusCode).toBe(404);
+    await server.close();
+  });
+
+  it('rejects invalid chain id path', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'multi'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/evm/not-a-number',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
+    });
+    expect(res.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('rejects when overloaded', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      MAX_CONCURRENT_REQUESTS: '0'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
+    });
+    expect(res.statusCode).toBe(503);
+    const body = res.json();
+    expect(body.error.code).toBe(-32603);
+    await server.close();
+  });
+
+  it('parses hex chain id header', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'multi'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json', 'x-chain-id': '0x1' },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
+    });
+    expect(res.statusCode).toBe(200);
+    await server.close();
+  });
+
+  it('accepts api key header array', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      WRAPPER_API_KEY: 'secret'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json', 'x-api-key': ['secret'] as unknown as string },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
+    });
+    expect(res.statusCode).toBe(200);
+    await server.close();
+  });
+
+  it('rejects invalid request payload', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({})
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error.code).toBe(-32600);
+    await server.close();
+  });
+
+  it('returns unsupported method error', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_sendRawTransaction', params: [] })
+    });
+    expect(res.statusCode).toBe(404);
+    const body = res.json();
+    expect(body.error.code).toBe(-32601);
     await server.close();
   });
 

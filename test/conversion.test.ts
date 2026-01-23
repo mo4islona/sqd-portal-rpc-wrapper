@@ -33,7 +33,15 @@ const tx: PortalTransaction = {
   input: '0x',
   nonce: '0x1',
   gas: '0x2',
-  type: '0x0'
+  type: '0x0',
+  gasPrice: '0x5',
+  maxFeePerGas: '0x6',
+  maxPriorityFeePerGas: '0x7',
+  chainId: '0x1',
+  yParity: '0x1',
+  v: '0x25',
+  r: '0x01',
+  s: '0x02'
 };
 
 describe('conversion', () => {
@@ -47,6 +55,11 @@ describe('conversion', () => {
     const result = convertTxToRpc(tx, header);
     expect(result.blockNumber).toBe('0xa');
     expect(result.transactionIndex).toBe('0x0');
+    expect(result.gasPrice).toBe('0x5');
+    expect(result.maxFeePerGas).toBe('0x6');
+    expect(result.maxPriorityFeePerGas).toBe('0x7');
+    expect(result.chainId).toBe('0x1');
+    expect(result.yParity).toBe('0x1');
   });
 
   it('converts log', () => {
@@ -86,5 +99,85 @@ describe('conversion', () => {
     const result = convertTraceToRpc(trace, header, { 0: '0xtx' });
     expect(result.type).toBe('call');
     expect(result.transactionHash).toBe('0xtx');
+  });
+
+  it('converts create trace', () => {
+    const trace: PortalTrace = {
+      transactionIndex: 0,
+      traceAddress: [],
+      type: 'create',
+      subtraces: 0,
+      action: {},
+      createFrom: '0xfrom',
+      createValue: '0x1',
+      createGas: '0x2',
+      createInit: '0xinit',
+      createResultGasUsed: '0x3',
+      createResultAddress: '0xaddr'
+    };
+    const result = convertTraceToRpc(trace, header, { 0: '0xtx' });
+    expect(result.type).toBe('create');
+    expect((result.result as Record<string, unknown>).address).toBe('0xaddr');
+  });
+
+  it('converts suicide trace', () => {
+    const trace: PortalTrace = {
+      transactionIndex: 0,
+      traceAddress: [],
+      type: 'suicide',
+      subtraces: 0,
+      action: {},
+      suicideAddress: '0xaddr',
+      suicideRefundAddress: '0xref',
+      suicideBalance: '0x1'
+    };
+    const result = convertTraceToRpc(trace, header, { 0: '0xtx' });
+    expect(result.type).toBe('suicide');
+    expect((result.action as Record<string, unknown>).refundAddress).toBe('0xref');
+  });
+
+  it('converts reward trace', () => {
+    const trace: PortalTrace = {
+      transactionIndex: 0,
+      traceAddress: [],
+      type: 'reward',
+      subtraces: 0,
+      action: {},
+      rewardAuthor: '0xminer',
+      rewardType: 'block',
+      rewardValue: '0x2'
+    };
+    const result = convertTraceToRpc(trace, header, { 0: '0xtx' });
+    expect(result.type).toBe('reward');
+    expect((result.action as Record<string, unknown>).rewardType).toBe('block');
+  });
+
+  it('sets trace error and omit result', () => {
+    const trace: PortalTrace = {
+      transactionIndex: 0,
+      traceAddress: [],
+      type: 'call',
+      subtraces: 0,
+      action: {},
+      error: 'reverted'
+    };
+    const result = convertTraceToRpc(trace, header, { 0: '0xtx' });
+    expect(result.error).toBe('reverted');
+    expect(result.result).toBeUndefined();
+  });
+
+  it('uses trace.result fields', () => {
+    const trace: PortalTrace = {
+      transactionIndex: 0,
+      traceAddress: [],
+      type: 'call',
+      subtraces: 0,
+      action: {},
+      result: { gasUsed: '0x2', output: '0xout' },
+      revertReason: 'oops'
+    };
+    const result = convertTraceToRpc(trace, header, { 0: '0xtx' });
+    expect((result.result as Record<string, unknown>).gasUsed).toBe('0x2');
+    expect(result.revertReason).toBe('oops');
   });
 });

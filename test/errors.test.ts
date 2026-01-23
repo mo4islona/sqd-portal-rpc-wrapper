@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { rangeTooLargeError, tooManyAddressesError, pendingBlockError, blockHashFilterError } from '../src/errors';
+import {
+  rangeTooLargeError,
+  tooManyAddressesError,
+  pendingBlockError,
+  blockHashFilterError,
+  invalidRequest,
+  parseError
+} from '../src/errors';
 
 describe('errors', () => {
   it('range too large message contains required substrings', () => {
@@ -21,5 +28,15 @@ describe('errors', () => {
   it('blockHash message matches', () => {
     const err = blockHashFilterError();
     expect(err.message).toContain('blockHash filter not supported');
+  });
+
+  it('builds invalid request error', () => {
+    const err = invalidRequest();
+    expect(err.code).toBe(-32600);
+  });
+
+  it('builds parse error', () => {
+    const err = parseError();
+    expect(err.code).toBe(-32700);
   });
 });

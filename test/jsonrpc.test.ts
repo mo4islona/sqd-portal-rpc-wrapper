@@ -18,4 +18,17 @@ describe('jsonrpc', () => {
   it('rejects invalid payload', () => {
     expect(() => parseJsonRpcPayload({} as any)).toThrow('invalid request');
   });
+
+  it('rejects empty batch', () => {
+    expect(() => parseJsonRpcPayload([])).toThrow('invalid request');
+  });
+
+  it('rejects invalid batch item', () => {
+    expect(() =>
+      parseJsonRpcPayload([
+        { jsonrpc: '2.0', method: 'eth_chainId', params: [], id: 1 },
+        { not: 'rpc' } as any
+      ])
+    ).toThrow('invalid request');
+  });
 });

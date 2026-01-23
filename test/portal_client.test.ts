@@ -25,6 +25,17 @@ describe('PortalClient', () => {
     expect(client.buildDatasetBaseUrl('ethereum-mainnet')).toBe('https://portal.sqd.dev/datasets/ethereum-mainnet');
   });
 
+  it('builds dataset base url with placeholder', () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      PORTAL_BASE_URL: 'https://portal.sqd.dev/{dataset}'
+    });
+    const client = new PortalClient(cfg);
+    expect(client.buildDatasetBaseUrl('ethereum-mainnet')).toBe('https://portal.sqd.dev/ethereum-mainnet');
+  });
+
   it('falls back from finalized head', async () => {
     const cfg = loadConfig({
       SERVICE_MODE: 'single',
@@ -67,6 +78,22 @@ describe('PortalClient', () => {
     expect(blocks).toHaveLength(2);
   });
 
+  it('returns empty on 204', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = async () => new Response(null, { status: 204 });
+    const client = new PortalClient(cfg, { fetchImpl });
+    const blocks = await client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, {
+      type: 'evm',
+      fromBlock: 1,
+      toBlock: 1
+    });
+    expect(blocks).toHaveLength(0);
+  });
+
   it('maps rate limit errors', async () => {
     const cfg = loadConfig({
       SERVICE_MODE: 'single',
@@ -78,5 +105,72 @@ describe('PortalClient', () => {
     await expect(
       client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, { type: 'evm', fromBlock: 1, toBlock: 1 })
     ).rejects.toThrow('Too Many Requests');
+  });
+
+  it('maps unauthorized errors', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = async () => new Response('unauthorized', { status: 401 });
+    const client = new PortalClient(cfg, { fetchImpl });
+    await expect(
+      client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, { type: 'evm', fromBlock: 1, toBlock: 1 })
+    ).rejects.toThrow('unauthorized');
+  });
+
+  it('maps conflict errors', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = async () => new Response('conflict', { status: 409 });
+    const client = new PortalClient(cfg, { fetchImpl });
+    await expect(
+      client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, { type: 'evm', fromBlock: 1, toBlock: 1 })
+    ).rejects.toThrow('conflict');
+  });
+
+  it('maps unavailable errors', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = async () => new Response('unavailable', { status: 503 });
+    const client = new PortalClient(cfg, { fetchImpl });
+    await expect(
+      client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, { type: 'evm', fromBlock: 1, toBlock: 1 })
+    ).rejects.toThrow('unavailable');
+  });
+
+  it('fetchHead maps missing data', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = async () => new Response('missing', { status: 404 });
+    const client = new PortalClient(cfg, { fetchImpl });
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '', undefined)).rejects.toThrow(
+      'block not found'
+    );
+  });
+
+  it('propagates fetch errors', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = async () => {
+      throw new Error('boom');
+    };
+    const client = new PortalClient(cfg, { fetchImpl });
+    await expect(
+      client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, { type: 'evm', fromBlock: 1, toBlock: 1 })
+    ).rejects.toThrow('boom');
   });
 });
