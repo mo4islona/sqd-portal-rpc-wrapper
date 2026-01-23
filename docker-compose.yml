@@ -1,0 +1,11 @@
+services:
+  portal-wrapper:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      SERVICE_MODE: "single"
+      PORTAL_DATASET: "ethereum-mainnet"
+      PORTAL_CHAIN_ID: "1"
+      PORTAL_API_KEY: ""
+      WRAPPER_API_KEY: ""
