@@ -33,6 +33,7 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
           ? await gunzipAsync(buffer, { maxOutputLength: config.maxRequestBodyBytes })
           : buffer;
       } catch (err) {
+        req.log.warn({ err }, 'gzip decompression failed');
         throw invalidRequest('invalid request');
       }
       try {
@@ -54,8 +55,8 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
       });
       return;
     }
-    if (err && typeof err === 'object' && 'cause' in err && (err as { cause?: unknown }).cause instanceof RpcError) {
-      const rpcError = (err as { cause: RpcError }).cause;
+    if (hasRpcErrorCause(err)) {
+      const rpcError = err.cause;
       metrics.errors_total.labels(rpcError.category).inc();
       reply.code(rpcError.httpStatus).send({
         jsonrpc: '2.0',
@@ -64,7 +65,7 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
       });
       return;
     }
-    const errCode = (err as { code?: string }).code;
+    const errCode = getErrorCode(err);
     if (errCode === 'FST_ERR_CTP_BODY_INVALID_JSON' || errCode === 'FST_ERR_CTP_INVALID_JSON' || err instanceof SyntaxError) {
       const rpcError = parseError('parse error');
       metrics.errors_total.labels(rpcError.category).inc();
@@ -75,7 +76,7 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
       });
       return;
     }
-    if (errCode?.startsWith('FST_ERR_CTP') || err.message.includes('invalid request')) {
+    if (errCode?.startsWith('FST_ERR_CTP')) {
       const rpcError = invalidRequest('invalid request');
       metrics.errors_total.labels(rpcError.category).inc();
       reply.code(rpcError.httpStatus).send({
@@ -85,6 +86,7 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
       });
       return;
     }
+    req.log.error({ err }, 'unexpected error');
     const rpcError = normalizeError(err);
     metrics.errors_total.labels(rpcError.category).inc();
     reply.code(rpcError.httpStatus).send({
@@ -266,6 +268,23 @@ function extractSingleChainIdFromMap(config: Config): number {
     throw new Error('PORTAL_CHAIN_ID required');
   }
   return config.portalChainId;
+}
+
+function hasRpcErrorCause(err: unknown): err is { cause: RpcError } {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'cause' in err &&
+    (err as { cause?: unknown }).cause instanceof RpcError
+  );
+}
+
+function getErrorCode(err: unknown): string | undefined {
+  if (!err || typeof err !== 'object') {
+    return undefined;
+  }
+  const code = (err as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
 }
 
 function toCategory(code: number): string {

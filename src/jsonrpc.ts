@@ -1,18 +1,18 @@
 import { invalidRequest, RpcError } from './errors';
 
+export type JsonRpcId = string | number | null;
+export type JsonRpcParams = unknown[] | Record<string, unknown> | null;
+
 export interface JsonRpcRequest {
-  jsonrpc: string;
+  jsonrpc: '2.0';
   method: string;
-  params?: unknown;
-  id?: unknown;
+  params?: JsonRpcParams;
+  id?: JsonRpcId;
 }
 
-export interface JsonRpcResponse {
-  jsonrpc: '2.0';
-  id: unknown;
-  result?: unknown;
-  error?: { code: number; message: string; data?: Record<string, unknown> };
-}
+export type JsonRpcResponse =
+  | { jsonrpc: '2.0'; id: JsonRpcId; result: unknown; error?: never }
+  | { jsonrpc: '2.0'; id: JsonRpcId; error: { code: number; message: string; data?: Record<string, unknown> }; result?: never };
 
 export type JsonRpcPayload = JsonRpcRequest | JsonRpcRequest[];
 
@@ -42,11 +42,11 @@ export function parseJsonRpcPayload(payload: unknown): JsonRpcRequest[] {
   return [payload];
 }
 
-export function successResponse(id: unknown, result: unknown): JsonRpcResponse {
+export function successResponse(id: JsonRpcId, result: unknown): JsonRpcResponse {
   return { jsonrpc: '2.0', id, result };
 }
 
-export function errorResponse(id: unknown, error: RpcError): JsonRpcResponse {
+export function errorResponse(id: JsonRpcId, error: RpcError): JsonRpcResponse {
   const payload: JsonRpcResponse = {
     jsonrpc: '2.0',
     id,
@@ -65,7 +65,7 @@ export function errorResponse(id: unknown, error: RpcError): JsonRpcResponse {
   return payload;
 }
 
-export function responseId(req: JsonRpcRequest): unknown {
+export function responseId(req: JsonRpcRequest): JsonRpcId {
   if (typeof req.id === 'undefined') {
     return null;
   }

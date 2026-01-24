@@ -57,7 +57,7 @@ describe('config', () => {
     expect(() =>
       loadConfig({
         SERVICE_MODE: 'single',
-        PORTAL_DATASET_MAP: '{\"1\":\"ethereum-mainnet\",\"10\":\"optimism-mainnet\"}'
+        PORTAL_DATASET_MAP: '{"1":"ethereum-mainnet","10":"optimism-mainnet"}'
       })
     ).toThrow('PORTAL_CHAIN_ID');
   });

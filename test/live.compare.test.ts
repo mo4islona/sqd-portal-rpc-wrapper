@@ -24,6 +24,7 @@ let targetBlock = 0;
 let txIndex = 0;
 let txCount = 0;
 let matchedBlocks: { base: Record<string, unknown>; wrapper: Record<string, unknown> } | null = null;
+let lastRpcError: string | null = null;
 
 describeLive('live rpc parity', () => {
   beforeAll(async () => {
@@ -289,7 +290,8 @@ async function findMatchingBlockWithTx(
       }
     }
   }
-  throw new Error('no matching block found; set LIVE_BLOCK_NUMBER and LIVE_TX_INDEX');
+  const detail = lastRpcError ? `; last rpc error: ${lastRpcError}` : '';
+  throw new Error(`no matching block found; set LIVE_BLOCK_NUMBER and LIVE_TX_INDEX${detail}`);
 }
 
 async function findMatchingTxIndexForBlock(
@@ -303,14 +305,16 @@ async function findMatchingTxIndexForBlock(
     safeRpcResult(wrapper, 'eth_getBlockByNumber', [blockHex, true])
   ]);
   if (!baseBlock || !wrapperBlock) {
-    throw new Error('block fetch failed; set LIVE_BLOCK_NUMBER and LIVE_TX_INDEX');
+    const detail = lastRpcError ? `; last rpc error: ${lastRpcError}` : '';
+    throw new Error(`block fetch failed; set LIVE_BLOCK_NUMBER and LIVE_TX_INDEX${detail}`);
   }
   const match = findMatchingTxIndexFromBlocks(
     baseBlock as Record<string, unknown>,
     wrapperBlock as Record<string, unknown>
   );
   if (match === null) {
-    throw new Error('no matching tx found; set LIVE_BLOCK_NUMBER and LIVE_TX_INDEX');
+    const detail = lastRpcError ? `; last rpc error: ${lastRpcError}` : '';
+    throw new Error(`no matching tx found; set LIVE_BLOCK_NUMBER and LIVE_TX_INDEX${detail}`);
   }
   return { txIndex: match, baseBlock: baseBlock as Record<string, unknown>, wrapperBlock: wrapperBlock as Record<string, unknown> };
 }
@@ -318,12 +322,8 @@ async function findMatchingTxIndexForBlock(
 function extractTxIndex(tx: unknown, fallback: number): number {
   if (!tx || typeof tx !== 'object') return fallback;
   const raw = (tx as { transactionIndex?: unknown }).transactionIndex;
-  try {
-    if (raw !== undefined) {
-      return parseHexQuantity(raw);
-    }
-  } catch {
-    return fallback;
+  if (raw !== undefined) {
+    return parseHexQuantity(raw);
   }
   return fallback;
 }
@@ -479,6 +479,7 @@ async function safeRpcResult(url: string, method: string, params: unknown[], ret
       return await rpcResult(url, method, params);
     } catch (err) {
       lastError = err;
+      lastRpcError = err instanceof Error ? err.message : String(err);
       await sleep(200);
     }
   }

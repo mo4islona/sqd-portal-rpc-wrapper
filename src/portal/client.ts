@@ -167,7 +167,7 @@ async function readBody(resp: Response): Promise<string> {
     const text = await resp.text();
     return text || 'response body unavailable';
   } catch (err) {
-    return `response body unavailable`; 
+    return `response body unavailable: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 

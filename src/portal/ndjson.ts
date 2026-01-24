@@ -21,7 +21,7 @@ export async function parseNdjsonStream(
     const chunkBuf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
     totalBytes += chunkBuf.length;
     if (totalBytes > limits.maxBytes) {
-      throw serverError('server error');
+      throw serverError(`ndjson payload exceeds max bytes (${limits.maxBytes})`);
     }
 
     buffer += decoder.decode(chunkBuf, { stream: true });
@@ -31,12 +31,12 @@ export async function parseNdjsonStream(
       buffer = buffer.slice(idx + 1);
       if (line.length > 0) {
         if (line.length > limits.maxLineBytes) {
-          throw serverError('server error');
+          throw serverError(`ndjson line exceeds max bytes (${limits.maxLineBytes})`);
         }
         try {
           blocks.push(JSON.parse(line));
         } catch (err) {
-          throw serverError('server error');
+          throw serverError(`ndjson parse error: ${err instanceof Error ? err.message : String(err)}`);
         }
         metrics.ndjson_lines_total.inc();
       }
@@ -47,12 +47,12 @@ export async function parseNdjsonStream(
   const remaining = buffer.trim();
   if (remaining.length > 0) {
     if (remaining.length > limits.maxLineBytes) {
-      throw serverError('server error');
+      throw serverError(`ndjson line exceeds max bytes (${limits.maxLineBytes})`);
     }
     try {
       blocks.push(JSON.parse(remaining));
     } catch (err) {
-      throw serverError('server error');
+      throw serverError(`ndjson parse error: ${err instanceof Error ? err.message : String(err)}`);
     }
     metrics.ndjson_lines_total.inc();
   }

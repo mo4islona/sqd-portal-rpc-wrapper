@@ -25,7 +25,7 @@ describe('index', () => {
     const server = { listen: vi.fn(), close: vi.fn().mockResolvedValue(undefined) };
     const build = vi.fn().mockResolvedValue(server);
     const onSpy = vi.spyOn(process, 'on');
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => undefined) as never);
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((_code?: number) => undefined) as never);
 
     await start({ config, build });
 
