@@ -11,9 +11,8 @@ export function convertBlockToRpc(block: PortalBlockResponse, fullTx: boolean): 
     miner: h.miner,
     gasUsed: quantityHex(h.gasUsed),
     gasLimit: quantityHex(h.gasLimit),
-    nonce: quantityHex(h.nonce),
+    nonce: normalizeNonce(h.nonce),
     difficulty: quantityHex(h.difficulty),
-    totalDifficulty: quantityHex(h.totalDifficulty),
     size: quantityHex(h.size),
     stateRoot: h.stateRoot,
     transactionsRoot: h.transactionsRoot,
@@ -28,6 +27,10 @@ export function convertBlockToRpc(block: PortalBlockResponse, fullTx: boolean): 
   const baseFee = quantityHexIfSet(h.baseFeePerGas);
   if (baseFee !== undefined) {
     result.baseFeePerGas = baseFee;
+  }
+  const totalDifficulty = quantityHexIfSet(h.totalDifficulty);
+  if (totalDifficulty !== undefined) {
+    result.totalDifficulty = totalDifficulty;
   }
 
   if (fullTx) {
@@ -232,4 +235,11 @@ export function convertTraceToRpc(
 
 function toHex(value: number): string {
   return `0x${value.toString(16)}`;
+}
+
+function normalizeNonce(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return quantityHex(value);
 }

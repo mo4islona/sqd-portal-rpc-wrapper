@@ -91,7 +91,8 @@ async function handleGetBlockByNumber(request: JsonRpcRequest, ctx: HandlerConte
     fields: {
       block: allBlockFieldsSelection(),
       transaction: fullTx ? allTransactionFieldsSelection() : txHashOnlyFieldsSelection()
-    }
+    },
+    transactions: [{}]
   };
 
   const blocks = await ctx.portal.streamBlocks(baseUrl, blockTag.useFinalized, portalReq, ctx.traceparent);
@@ -117,7 +118,8 @@ async function handleGetTransactionByBlockNumberAndIndex(request: JsonRpcRequest
     fields: {
       block: { number: true, hash: true, parentHash: true, timestamp: true },
       transaction: allTransactionFieldsSelection()
-    }
+    },
+    transactions: [{}]
   };
 
   const blocks = await ctx.portal.streamBlocks(baseUrl, blockTag.useFinalized, portalReq, ctx.traceparent);
@@ -191,7 +193,8 @@ async function handleTraceBlock(request: JsonRpcRequest, ctx: HandlerContext): P
       transaction: txHashOnlyFieldsSelection(),
       trace: allTraceFieldsSelection()
     },
-    traces: [{}]
+    traces: [{}],
+    transactions: [{}]
   };
 
   const blocks = await ctx.portal.streamBlocks(baseUrl, blockTag.useFinalized, portalReq, ctx.traceparent);

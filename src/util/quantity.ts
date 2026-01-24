@@ -9,11 +9,9 @@ export function parseQuantity(input: unknown): bigint | null {
     if (trimmed === '') {
       return null;
     }
-    if (INVALID_NUMBER_RE.test(trimmed)) {
+    const isHex = trimmed.startsWith('0x') || trimmed.startsWith('0X');
+    if (!isHex && INVALID_NUMBER_RE.test(trimmed)) {
       throw new Error(`invalid quantity: ${input}`);
-    }
-    if (trimmed.startsWith('0x') || trimmed.startsWith('0X')) {
-      return BigInt(trimmed);
     }
     return BigInt(trimmed);
   }

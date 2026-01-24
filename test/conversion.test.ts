@@ -51,6 +51,16 @@ describe('conversion', () => {
     expect(result.transactions).toEqual(['0xtx']);
   });
 
+  it('preserves nonce formatting and omits null totalDifficulty', () => {
+    const block: PortalBlockResponse = {
+      header: { ...header, nonce: '0x0000000000000000', totalDifficulty: null },
+      transactions: []
+    };
+    const result = convertBlockToRpc(block, false);
+    expect(result.nonce).toBe('0x0000000000000000');
+    expect('totalDifficulty' in result).toBe(false);
+  });
+
   it('converts tx with hex quantities', () => {
     const result = convertTxToRpc(tx, header);
     expect(result.blockNumber).toBe('0xa');

@@ -4,6 +4,7 @@ import { parseQuantity, quantityHex, quantityHexIfSet } from '../src/util/quanti
 describe('quantity', () => {
   it('parses hex and decimal', () => {
     expect(parseQuantity('0x2a')).toBe(42n);
+    expect(parseQuantity('0x384e559')).toBe(0x384e559n);
     expect(parseQuantity('10')).toBe(10n);
     expect(parseQuantity(7)).toBe(7n);
   });
