@@ -21,10 +21,17 @@ export async function start(opts?: { config?: Config; build?: BuildServer }) {
   return server;
 }
 
-if (require.main === module) {
-  start().catch((err) => {
+export async function runMain(startFn: () => Promise<unknown> = () => start()) {
+  try {
+    await startFn();
+  } catch (err) {
     // eslint-disable-next-line no-console
     console.error(err);
     process.exit(1);
-  });
+  }
+}
+
+/* c8 ignore next 3 */
+if (require.main === module) {
+  void runMain();
 }

@@ -51,6 +51,13 @@ describe('conversion', () => {
     expect(result.transactions).toEqual(['0xtx']);
   });
 
+  it('converts block with full transactions', () => {
+    const block: PortalBlockResponse = { header, transactions: [tx] };
+    const result = convertBlockToRpc(block, true);
+    expect(Array.isArray(result.transactions)).toBe(true);
+    expect((result.transactions as Record<string, unknown>[])[0].hash).toBe('0xtx');
+  });
+
   it('preserves nonce formatting and omits null totalDifficulty', () => {
     const block: PortalBlockResponse = {
       header: { ...header, nonce: '0x0000000000000000', totalDifficulty: null },
@@ -59,6 +66,15 @@ describe('conversion', () => {
     const result = convertBlockToRpc(block, false);
     expect(result.nonce).toBe('0x0000000000000000');
     expect('totalDifficulty' in result).toBe(false);
+  });
+
+  it('normalizes numeric nonce', () => {
+    const block: PortalBlockResponse = {
+      header: { ...header, nonce: 10 },
+      transactions: []
+    };
+    const result = convertBlockToRpc(block, false);
+    expect(result.nonce).toBe('0xa');
   });
 
   it('converts tx with hex quantities', () => {
@@ -129,11 +145,13 @@ describe('conversion', () => {
       createGas: '0x2',
       createInit: '0xinit',
       createResultGasUsed: '0x3',
-      createResultAddress: '0xaddr'
+      createResultAddress: '0xaddr',
+      createResultCode: '0xcode'
     };
     const result = convertTraceToRpc(trace, header, { 0: '0xtx' });
     expect(result.type).toBe('create');
     expect((result.result as Record<string, unknown>).address).toBe('0xaddr');
+    expect((result.result as Record<string, unknown>).code).toBe('0xcode');
   });
 
   it('converts suicide trace', () => {
@@ -195,5 +213,31 @@ describe('conversion', () => {
     const result = convertTraceToRpc(trace, header, { 0: '0xtx' });
     expect((result.result as Record<string, unknown>).gasUsed).toBe('0x2');
     expect(result.revertReason).toBe('oops');
+  });
+
+  it('uses trace.result address and code', () => {
+    const trace: PortalTrace = {
+      transactionIndex: 0,
+      traceAddress: [],
+      type: 'call',
+      subtraces: 0,
+      action: {},
+      result: { address: '0xaddr', code: '0xcode' }
+    };
+    const result = convertTraceToRpc(trace, header, { 0: '0xtx' });
+    expect((result.result as Record<string, unknown>).address).toBe('0xaddr');
+    expect((result.result as Record<string, unknown>).code).toBe('0xcode');
+  });
+
+  it('handles unknown trace type', () => {
+    const trace = {
+      transactionIndex: 0,
+      traceAddress: [],
+      type: 'unknown',
+      subtraces: 0,
+      action: {}
+    } as PortalTrace;
+    const result = convertTraceToRpc(trace, header, {});
+    expect(result.type).toBe('unknown');
   });
 });

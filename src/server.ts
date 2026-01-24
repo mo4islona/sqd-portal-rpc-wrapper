@@ -308,3 +308,8 @@ function toCategory(code: number): string {
       return 'server_error';
   }
 }
+
+export const __test__ = {
+  extractChainId,
+  extractSingleChainIdFromMap
+};

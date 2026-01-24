@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { handleJsonRpc } from '../src/rpc/handlers';
 import { loadConfig } from '../src/config';
 
@@ -44,6 +44,24 @@ describe('handlers', () => {
     expect(response!.result).toBeNull();
   });
 
+  it('rejects missing params for eth_getBlockByNumber', async () => {
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: [] },
+      { config, portal: portal as any, chainId: 1, requestId: 'test' }
+    );
+    expect(httpStatus).toBe(400);
+    expect(response!.error?.code).toBe(-32602);
+  });
+
+  it('handles eth_getBlockByNumber full tx', async () => {
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x5', true] },
+      { config, portal: portalWithData as any, chainId: 1, requestId: 'test' }
+    );
+    const result = response!.result as { transactions?: { hash: string }[] };
+    expect(result.transactions?.[0].hash).toBe('0xtx');
+  });
+
   it('rejects unsupported method', async () => {
     const { response, httpStatus } = await handleJsonRpc(
       { jsonrpc: '2.0', id: 1, method: 'eth_sendRawTransaction', params: [] },
@@ -69,11 +87,78 @@ describe('handlers', () => {
     expect(response!.result).toBeTruthy();
   });
 
+  it('rejects missing params for eth_getTransactionByBlockNumberAndIndex', async () => {
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getTransactionByBlockNumberAndIndex', params: ['0x5'] },
+      { config, portal: portal as any, chainId: 1, requestId: 'test' }
+    );
+    expect(httpStatus).toBe(400);
+    expect(response!.error?.code).toBe(-32602);
+  });
+
+  it('returns null when transaction block missing', async () => {
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getTransactionByBlockNumberAndIndex', params: ['0x5', '0x0'] },
+      { config, portal: portal as any, chainId: 1, requestId: 'test' }
+    );
+    expect(response!.result).toBeNull();
+  });
+
+  it('returns null when tx index not found', async () => {
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getTransactionByBlockNumberAndIndex', params: ['0x5', '0x2'] },
+      { config, portal: portalWithData as any, chainId: 1, requestId: 'test' }
+    );
+    expect(response!.result).toBeNull();
+  });
+
+  it('rejects missing params for eth_getLogs', async () => {
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getLogs', params: [] },
+      { config, portal: portal as any, chainId: 1, requestId: 'test' }
+    );
+    expect(httpStatus).toBe(400);
+    expect(response!.error?.code).toBe(-32602);
+  });
+
+  it('warns on large log range', async () => {
+    const warn = vi.fn();
+    const logger = { info: vi.fn(), warn };
+    const wideConfig = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      MAX_LOG_BLOCK_RANGE: '20000'
+    });
+    await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getLogs', params: [{ fromBlock: '0x1', toBlock: '0x2711' }] },
+      { config: wideConfig, portal: portal as any, chainId: 1, requestId: 'test', logger }
+    );
+    expect(warn).toHaveBeenCalled();
+  });
+
   it('handles trace_block', async () => {
     const { response } = await handleJsonRpc(
       { jsonrpc: '2.0', id: 1, method: 'trace_block', params: ['0x5'] },
       { config, portal: portalWithData as any, chainId: 1, requestId: 'test' }
     );
     expect(Array.isArray(response!.result)).toBe(true);
+  });
+
+  it('rejects missing params for trace_block', async () => {
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'trace_block', params: [] },
+      { config, portal: portal as any, chainId: 1, requestId: 'test' }
+    );
+    expect(httpStatus).toBe(400);
+    expect(response!.error?.code).toBe(-32602);
+  });
+
+  it('returns empty traces when no blocks', async () => {
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'trace_block', params: ['0x5'] },
+      { config, portal: portal as any, chainId: 1, requestId: 'test' }
+    );
+    expect(response!.result).toEqual([]);
   });
 });

@@ -111,6 +111,16 @@ describe('validation', () => {
     expect(result.logFilter.address).toHaveLength(1);
   });
 
+  it('parses address array filter', async () => {
+    const result = await parseLogFilter(
+      portal as any,
+      'https://portal',
+      { address: ['0x' + '11'.repeat(20), '0x' + '22'.repeat(20)] },
+      config
+    );
+    expect(result.logFilter.address).toHaveLength(2);
+  });
+
   it('parses topic arrays and nulls', async () => {
     const result = await parseLogFilter(
       portal as any,
@@ -129,6 +139,28 @@ describe('validation', () => {
     await expect(parseLogFilter(portal as any, 'https://portal', { topics: 'bad' } as any, config)).rejects.toThrow(
       'invalid topics filter'
     );
+  });
+
+  it('rejects invalid topic entries', async () => {
+    await expect(
+      parseLogFilter(
+        portal as any,
+        'https://portal',
+        { topics: [['0x' + 'aa'.repeat(32), 1]] } as any,
+        config
+      )
+    ).rejects.toThrow('invalid topic filter');
+  });
+
+  it('rejects invalid topic type', async () => {
+    await expect(
+      parseLogFilter(
+        portal as any,
+        'https://portal',
+        { topics: [{}] } as any,
+        config
+      )
+    ).rejects.toThrow('invalid topic filter');
   });
 
   it('rejects too many topics', async () => {

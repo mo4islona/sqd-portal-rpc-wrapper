@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { start } from '../src/index';
+import { runMain, start } from '../src/index';
 import { loadConfig } from '../src/config';
 
 describe('index', () => {
@@ -44,5 +44,47 @@ describe('index', () => {
 
     exitSpy.mockRestore();
     onSpy.mockRestore();
+  });
+
+  it('logs and exits on start failure', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((_code?: number) => undefined) as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await runMain(async () => {
+      throw new Error('boom');
+    });
+
+    expect(errorSpy).toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+
+    exitSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it('runs main without error', async () => {
+    const startFn = vi.fn().mockResolvedValue(undefined);
+    await runMain(startFn);
+    expect(startFn).toHaveBeenCalled();
+  });
+
+  it('uses default loadConfig and buildServer', async () => {
+    vi.resetModules();
+    const server = { listen: vi.fn(), close: vi.fn() };
+    const loadConfig = vi.fn().mockReturnValue({ listenHost: '127.0.0.1', listenPort: 1234 });
+    const buildServer = vi.fn().mockResolvedValue(server);
+
+    vi.doMock('../src/config', () => ({ loadConfig }));
+    vi.doMock('../src/server', () => ({ buildServer }));
+
+    const { start } = await import('../src/index');
+    await start();
+
+    expect(loadConfig).toHaveBeenCalled();
+    expect(buildServer).toHaveBeenCalledWith({ listenHost: '127.0.0.1', listenPort: 1234 });
+    expect(server.listen).toHaveBeenCalledWith({ host: '127.0.0.1', port: 1234 });
+
+    vi.resetModules();
+    vi.unmock('../src/config');
+    vi.unmock('../src/server');
   });
 });

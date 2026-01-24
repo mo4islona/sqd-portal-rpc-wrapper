@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { errorResponse, parseJsonRpcPayload, responseId, successResponse } from '../src/jsonrpc';
+import { errorResponse, isJsonRpcRequest, parseJsonRpcPayload, responseId, successResponse } from '../src/jsonrpc';
 import { RpcError } from '../src/errors';
 
 describe('jsonrpc', () => {
@@ -31,6 +31,12 @@ describe('jsonrpc', () => {
         { not: 'rpc' } as any
       ])
     ).toThrow('invalid request');
+  });
+
+  it('detects jsonrpc request', () => {
+    expect(isJsonRpcRequest({ jsonrpc: '2.0', method: 'eth_chainId' })).toBe(true);
+    expect(isJsonRpcRequest({ jsonrpc: '1.0', method: 'eth_chainId' })).toBe(false);
+    expect(isJsonRpcRequest(null)).toBe(false);
   });
 
   it('builds success response', () => {

@@ -34,11 +34,29 @@ describe('config', () => {
     ).toThrow('SERVICE_MODE');
   });
 
+  it('defaults service mode to single', () => {
+    const cfg = loadConfig({
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    expect(cfg.serviceMode).toBe('single');
+  });
+
   it('rejects invalid dataset map', () => {
     expect(() =>
       loadConfig({
         SERVICE_MODE: 'single',
         PORTAL_DATASET_MAP: '[]',
+        PORTAL_CHAIN_ID: '1'
+      })
+    ).toThrow('PORTAL_DATASET_MAP');
+  });
+
+  it('rejects null dataset map', () => {
+    expect(() =>
+      loadConfig({
+        SERVICE_MODE: 'single',
+        PORTAL_DATASET_MAP: 'null',
         PORTAL_CHAIN_ID: '1'
       })
     ).toThrow('PORTAL_DATASET_MAP');

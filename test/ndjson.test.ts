@@ -45,4 +45,14 @@ describe('ndjson parser', () => {
     const result = await parseNdjsonStream(stream, { maxLineBytes: 1024, maxBytes: 2048 });
     expect(result[0].header.number).toBe(4);
   });
+
+  it('rejects oversized trailing line without newline', async () => {
+    const stream = Readable.from(['a'.repeat(20)]);
+    await expect(parseNdjsonStream(stream, { maxLineBytes: 5, maxBytes: 2048 })).rejects.toThrow('ndjson line');
+  });
+
+  it('rejects invalid trailing json without newline', async () => {
+    const stream = Readable.from(['{bad json}']);
+    await expect(parseNdjsonStream(stream, { maxLineBytes: 1024, maxBytes: 2048 })).rejects.toThrow('ndjson parse');
+  });
 });

@@ -12,4 +12,14 @@ describe('concurrency limiter', () => {
     const next = limiter.tryAcquire();
     expect(next).not.toBeNull();
   });
+
+  it('release is idempotent', () => {
+    const limiter = new ConcurrencyLimiter(1);
+    const release = limiter.tryAcquire();
+    expect(release).not.toBeNull();
+    release?.();
+    release?.();
+    const next = limiter.tryAcquire();
+    expect(next).not.toBeNull();
+  });
 });
