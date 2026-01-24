@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { gzipSync } from 'node:zlib';
 import { buildServer } from '../src/server';
 import { loadConfig } from '../src/config';
+import { invalidParams } from '../src/errors';
 
 describe('server', () => {
   it('handles healthz', async () => {
@@ -38,6 +39,25 @@ describe('server', () => {
     const res = await server.inject({ method: 'GET', url: '/metrics' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/plain');
+    await server.close();
+  });
+
+  it('returns rpc error when cause is RpcError', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    server.get('/boom', async () => {
+      const err = new Error('boom');
+      (err as { cause?: unknown }).cause = invalidParams('invalid params');
+      throw err;
+    });
+    const res = await server.inject({ method: 'GET', url: '/boom' });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error.code).toBe(-32602);
     await server.close();
   });
 
@@ -266,6 +286,25 @@ describe('server', () => {
     await server.close();
   });
 
+  it('rejects non-boolean fullTx param', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x1', 'nope'] })
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error.code).toBe(-32602);
+    await server.close();
+  });
+
   it('returns unsupported method error', async () => {
     const config = loadConfig({
       SERVICE_MODE: 'single',
@@ -282,6 +321,23 @@ describe('server', () => {
     expect(res.statusCode).toBe(404);
     const body = res.json();
     expect(body.error.code).toBe(-32601);
+    await server.close();
+  });
+
+  it('rejects unsupported chain id in multi mode', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'multi'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v1/evm/999999',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] })
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error.code).toBe(-32602);
     await server.close();
   });
 

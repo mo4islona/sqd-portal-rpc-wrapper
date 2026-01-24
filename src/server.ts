@@ -33,7 +33,9 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
           ? await gunzipAsync(buffer, { maxOutputLength: config.maxRequestBodyBytes })
           : buffer;
       } catch (err) {
-        req.log.warn({ err }, 'gzip decompression failed');
+        const message = err instanceof Error ? err.message : String(err);
+        const reason = message.includes('maxOutputLength') || message.includes('output length') ? 'size_limit' : 'corrupt';
+        req.log.warn({ err: message, reason }, 'gzip decompression failed');
         throw invalidRequest('invalid request');
       }
       try {

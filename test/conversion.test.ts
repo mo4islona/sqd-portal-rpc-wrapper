@@ -72,6 +72,12 @@ describe('conversion', () => {
     expect(result.yParity).toBe('0x1');
   });
 
+  it('sets to null for contract creation', () => {
+    const creationTx: PortalTransaction = { ...tx, to: undefined };
+    const result = convertTxToRpc(creationTx, header);
+    expect(result.to).toBeNull();
+  });
+
   it('converts log', () => {
     const block: PortalBlockResponse = {
       header,
