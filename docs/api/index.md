@@ -13,6 +13,23 @@ The SQD Portal RPC Wrapper implements a subset of the Ethereum JSON-RPC specific
 | `/readyz` | GET | Readiness probe |
 | `/metrics` | GET | Prometheus metrics |
 
+## Supported Methods
+
+- `eth_chainId`
+- `eth_blockNumber`
+- `eth_getBlockByNumber`
+- `eth_getTransactionByBlockNumberAndIndex`
+- `eth_getLogs`
+- `trace_block`
+
+Optional upstream-only methods (when `UPSTREAM_METHODS_ENABLED=true`):
+- `eth_getBlockByHash`
+- `eth_getTransactionByHash`
+- `eth_getTransactionReceipt`
+- `trace_transaction`
+
+Unsupported methods return HTTP 404 with JSON-RPC error `-32601` and message containing `method not supported`.
+
 ## Request Format
 
 Standard JSON-RPC 2.0:
@@ -78,6 +95,28 @@ All block parameters accept:
 - `latest` → Portal `/head` + `/stream`
 - `finalized`/`safe` → Portal `/finalized-head` + `/finalized-stream`
 - Automatic fallback to non-finalized if finalized endpoints return 404
+
+## Start Block
+
+If Portal metadata provides `start_block`, requests for blocks before that height return:
+- `null` for block/transaction lookups
+- `[]` for log/trace queries
+
+## Error Mapping
+
+| Condition | HTTP | Code | Notes |
+| --- | --- | --- | --- |
+| Parse error | 400 | -32700 | Invalid JSON |
+| Invalid request | 400 | -32600 | Non-JSON-RPC payload |
+| Invalid params | 400 | -32602 | Validation errors |
+| Range too large / too many addresses | 400 | -32012 | Log range / address limits |
+| Method not supported | 404 | -32601 | Unsupported / upstream-only when disabled |
+| Not found | 404 | -32014 | Missing block data |
+| Unauthorized | 401 | -32016 | Wrapper or Portal key |
+| Rate limit | 429 | -32005 | Portal throttling |
+| Conflict | 409 | -32603 | Reorg conflict with `previousBlocks` |
+| Timeout | 504 | -32000 | Handler timeout |
+| Server error / unavailable | 502/503 | -32603 | Upstream/Portal errors |
 
 ## Content Types
 

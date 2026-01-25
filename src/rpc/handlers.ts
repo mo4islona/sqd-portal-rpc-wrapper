@@ -160,7 +160,8 @@ async function handleGetBlockByNumber(request: JsonRpcRequest, ctx: HandlerConte
   if (blocks.length === 0) {
     return null;
   }
-  return convertBlockToRpc(blocks[0], fullTx);
+  const uncles = await fetchUncles(ctx, blockTag.number);
+  return convertBlockToRpc(blocks[0], fullTx, uncles);
 }
 
 async function handleGetBlockByHash(request: JsonRpcRequest, ctx: HandlerContext): Promise<unknown> {
@@ -258,7 +259,7 @@ async function handleGetLogs(request: JsonRpcRequest, ctx: HandlerContext): Prom
     return proxyUpstream(request, ctx, 'blockHash filter not supported');
   }
   const startBlock = await getStartBlock(ctx, baseUrl);
-  const { useFinalized, toBlockDefaulted, logFilter } = parsed;
+  const { useFinalized, logFilter } = parsed;
   let { fromBlock, toBlock } = parsed;
   if (startBlock !== undefined) {
     if (toBlock < startBlock) {
@@ -286,6 +287,7 @@ async function handleGetLogs(request: JsonRpcRequest, ctx: HandlerContext): Prom
   const portalReq: PortalRequest = {
     type: 'evm',
     fromBlock,
+    toBlock,
     includeAllBlocks: ctx.config.portalIncludeAllBlocks || undefined,
     fields: {
       block: { number: true, hash: true },
@@ -293,9 +295,6 @@ async function handleGetLogs(request: JsonRpcRequest, ctx: HandlerContext): Prom
     },
     logs: [logFilter]
   };
-  if (!(ctx.config.portalOpenEndedStream && toBlockDefaulted)) {
-    portalReq.toBlock = toBlock;
-  }
 
   const blocks = await ctx.portal.streamBlocks(
     baseUrl,
@@ -378,6 +377,36 @@ async function handleTraceTransaction(request: JsonRpcRequest, ctx: HandlerConte
   return proxyUpstreamOrUnsupported(request, ctx);
 }
 
+async function fetchUncles(ctx: HandlerContext, blockNumber: number): Promise<string[] | undefined> {
+  if (!ctx.config.upstreamMethodsEnabled) {
+    return undefined;
+  }
+  if (!ctx.upstream || !ctx.upstream.resolveUrl(ctx.chainId)) {
+    return undefined;
+  }
+  const hex = `0x${blockNumber.toString(16)}`;
+  try {
+    const result = await ctx.upstream.call(
+      { jsonrpc: '2.0', method: 'eth_getBlockByNumber', params: [hex, false], id: null },
+      ctx.chainId,
+      ctx.traceparent
+    );
+    if (!result || typeof result !== 'object') {
+      return undefined;
+    }
+    const uncles = (result as { uncles?: unknown }).uncles;
+    if (Array.isArray(uncles)) {
+      return uncles.filter((uncle) => typeof uncle === 'string');
+    }
+  } catch (err) {
+    ctx.logger?.warn?.(
+      { requestId: ctx.requestId, method: 'eth_getBlockByNumber', chainId: ctx.chainId, error: String(err) },
+      'upstream uncles fetch failed'
+    );
+  }
+  return undefined;
+}
+
 async function getStartBlock(ctx: HandlerContext, baseUrl: string): Promise<number | undefined> {
   if (!ctx.startBlockCache) {
     const metadata = await ctx.portal.getMetadata(baseUrl, ctx.traceparent, ctx.requestId);
@@ -406,6 +435,9 @@ function isHashParam(value: unknown): value is string {
 }
 
 function proxyUpstream(request: JsonRpcRequest, ctx: HandlerContext, message: string): Promise<unknown> {
+  if (!ctx.config.upstreamMethodsEnabled) {
+    throw invalidParams(message);
+  }
   if (!ctx.upstream || !ctx.upstream.resolveUrl(ctx.chainId)) {
     throw invalidParams(message);
   }
@@ -413,6 +445,9 @@ function proxyUpstream(request: JsonRpcRequest, ctx: HandlerContext, message: st
 }
 
 function proxyUpstreamOrUnsupported(request: JsonRpcRequest, ctx: HandlerContext): Promise<unknown> {
+  if (!ctx.config.upstreamMethodsEnabled) {
+    throw methodNotSupported('method not supported');
+  }
   if (!ctx.upstream || !ctx.upstream.resolveUrl(ctx.chainId)) {
     throw methodNotSupported('method not supported');
   }

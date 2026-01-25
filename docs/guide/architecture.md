@@ -71,7 +71,7 @@ sequenceDiagram
     H->>P: fetchHead / streamBlocks
     P-->>H: NDJSON response
     H->>H: Convert to RPC format
-  else Hash-based (upstream configured)
+  else Hash-based (upstream enabled + configured)
     H->>U: Proxy request
     U-->>H: JSON-RPC response
   else Unsupported

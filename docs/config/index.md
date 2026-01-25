@@ -14,6 +14,7 @@ All configuration is done via environment variables.
 | `PORTAL_CHAIN_ID` | — | Single-chain chain ID |
 | `PORTAL_API_KEY` | — | Portal authentication |
 | `UPSTREAM_RPC_URL` | — | Upstream RPC fallback |
+| `UPSTREAM_METHODS_ENABLED` | `false` | Enable upstream-only methods |
 
 ## Service Configuration
 

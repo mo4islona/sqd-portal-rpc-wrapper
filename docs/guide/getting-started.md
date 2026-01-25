@@ -81,10 +81,11 @@ SERVICE_MODE=single \
 PORTAL_DATASET=ethereum-mainnet \
 PORTAL_CHAIN_ID=1 \
 UPSTREAM_RPC_URL=https://eth.llamarpc.com \
+UPSTREAM_METHODS_ENABLED=true \
 npm run dev
 ```
 
-This enables:
+This enables upstream-only methods:
 - `eth_getBlockByHash`
 - `eth_getTransactionByHash`
 - `eth_getTransactionReceipt`

@@ -1,7 +1,7 @@
 import { quantityHex, quantityHexIfSet } from '../util/quantity';
 import { PortalBlockResponse, PortalBlockHeader, PortalTransaction, PortalLog, PortalTrace, PortalWithdrawal } from '../portal/types';
 
-export function convertBlockToRpc(block: PortalBlockResponse, fullTx: boolean): Record<string, unknown> {
+export function convertBlockToRpc(block: PortalBlockResponse, fullTx: boolean, uncles?: string[]): Record<string, unknown> {
   const h = block.header;
   const result: Record<string, unknown> = {
     number: toHex(h.number),
@@ -21,7 +21,7 @@ export function convertBlockToRpc(block: PortalBlockResponse, fullTx: boolean): 
     extraData: h.extraData,
     mixHash: h.mixHash,
     sha3Uncles: h.sha3Uncles,
-    uncles: []
+    uncles: uncles ?? []
   };
 
   const baseFee = quantityHexIfSet(h.baseFeePerGas);

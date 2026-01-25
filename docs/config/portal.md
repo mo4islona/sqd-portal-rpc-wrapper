@@ -131,7 +131,7 @@ PORTAL_INCLUDE_ALL_BLOCKS=true
 
 ### PORTAL_OPEN_ENDED_STREAM
 
-Omit `toBlock` in Portal requests when client omits it, allowing open-ended streaming.
+Reserved for future streaming endpoints. JSON-RPC responses remain bounded.
 
 **Default:** `false`
 
@@ -143,7 +143,7 @@ PORTAL_OPEN_ENDED_STREAM=true
 
 ### UPSTREAM_RPC_URL
 
-URL for upstream JSON-RPC fallback. Enables hash-based methods.
+URL for upstream JSON-RPC fallback. Requires `UPSTREAM_METHODS_ENABLED=true` to expose upstream-only methods.
 
 ```bash
 UPSTREAM_RPC_URL=https://eth.llamarpc.com
@@ -155,4 +155,14 @@ JSON object mapping chain IDs to upstream URLs. Overrides `UPSTREAM_RPC_URL` for
 
 ```bash
 UPSTREAM_RPC_URL_MAP='{"1":"https://eth.llamarpc.com","8453":"https://base.llamarpc.com"}'
+```
+
+### UPSTREAM_METHODS_ENABLED
+
+Advertise + allow upstream-only methods.
+
+**Default:** `false`
+
+```bash
+UPSTREAM_METHODS_ENABLED=true
 ```

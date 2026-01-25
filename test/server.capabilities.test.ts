@@ -43,6 +43,68 @@ describe('capabilities endpoint', () => {
     vi.unmock('../src/portal/mapping');
   });
 
+  it('advertises upstream methods only when enabled', async () => {
+    vi.resetModules();
+    vi.doMock('../src/portal/client', () => {
+      class PortalClient {
+        constructor(_config: unknown) {}
+        buildDatasetBaseUrl(dataset: string) {
+          return `https://portal/${dataset}`;
+        }
+        async getMetadata() {
+          return { dataset: 'ethereum-mainnet', start_block: 0, real_time: true };
+        }
+      }
+      return { PortalClient, normalizePortalBaseUrl: (value: string) => value };
+    });
+    vi.doMock('../src/portal/mapping', async () => {
+      const actual = await vi.importActual<typeof import('../src/portal/mapping')>('../src/portal/mapping');
+      return { ...actual, defaultDatasetMap: () => ({ '1': 'ethereum-mainnet' }) };
+    });
+
+    const { buildServer } = await import('../src/server');
+    const baseConfig = {
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      UPSTREAM_RPC_URL: 'https://upstream.rpc'
+    };
+
+    const serverDisabled = await buildServer(loadConfig(baseConfig));
+    const resDisabled = await serverDisabled.inject({ method: 'GET', url: '/capabilities' });
+    const methodsDisabled = resDisabled.json().methods as string[];
+    expect(methodsDisabled).toEqual([
+      'eth_chainId',
+      'eth_blockNumber',
+      'eth_getBlockByNumber',
+      'eth_getTransactionByBlockNumberAndIndex',
+      'eth_getLogs',
+      'trace_block'
+    ]);
+    await serverDisabled.close();
+
+    const serverEnabled = await buildServer(loadConfig({ ...baseConfig, UPSTREAM_METHODS_ENABLED: 'true' }));
+    const resEnabled = await serverEnabled.inject({ method: 'GET', url: '/capabilities' });
+    const methodsEnabled = resEnabled.json().methods as string[];
+    expect(methodsEnabled).toEqual([
+      'eth_chainId',
+      'eth_blockNumber',
+      'eth_getBlockByNumber',
+      'eth_getTransactionByBlockNumberAndIndex',
+      'eth_getLogs',
+      'trace_block',
+      'eth_getBlockByHash',
+      'eth_getTransactionByHash',
+      'eth_getTransactionReceipt',
+      'trace_transaction'
+    ]);
+    await serverEnabled.close();
+
+    vi.resetModules();
+    vi.unmock('../src/portal/client');
+    vi.unmock('../src/portal/mapping');
+  });
+
   it('passes finalized head headers from stream', async () => {
     vi.resetModules();
     vi.doMock('../src/portal/client', () => {

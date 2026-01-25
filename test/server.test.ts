@@ -69,7 +69,13 @@ describe('server', () => {
       PORTAL_DATASET: 'ethereum-mainnet',
       PORTAL_CHAIN_ID: '1'
     });
-    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 }));
+    const fetchImpl = vi.fn().mockImplementation(async (input: unknown) => {
+      const url = typeof input === 'string' ? input : String(input);
+      if (url.endsWith('/metadata')) {
+        return new Response(JSON.stringify({ dataset: 'ethereum-mainnet', real_time: true }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
+    });
     vi.stubGlobal('fetch', fetchImpl);
     const server = await buildServer(config);
     const res = await server.inject({ method: 'GET', url: '/readyz' });

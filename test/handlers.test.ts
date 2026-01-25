@@ -204,7 +204,8 @@ describe('handlers', () => {
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
       PORTAL_CHAIN_ID: '1',
-      UPSTREAM_RPC_URL: 'https://upstream.rpc'
+      UPSTREAM_RPC_URL: 'https://upstream.rpc',
+      UPSTREAM_METHODS_ENABLED: 'true'
     });
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { number: '0x1' } }))
@@ -267,7 +268,8 @@ describe('handlers', () => {
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
       PORTAL_CHAIN_ID: '1',
-      UPSTREAM_RPC_URL: 'https://upstream.rpc'
+      UPSTREAM_RPC_URL: 'https://upstream.rpc',
+      UPSTREAM_METHODS_ENABLED: 'true'
     });
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: [{ logIndex: '0x0' }] }))
@@ -338,7 +340,7 @@ describe('handlers', () => {
     expect(response!.result).toEqual([]);
   });
 
-  it('omits toBlock when open-ended stream enabled', async () => {
+  it('keeps bounded toBlock even when open-ended stream enabled', async () => {
     const configOpen = loadConfig({
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
@@ -361,7 +363,7 @@ describe('handlers', () => {
       { config: configOpen, portal: portalOpen as any, chainId: 1, requestId: 'test' }
     );
     expect(seen).toBeTruthy();
-    expect(Object.prototype.hasOwnProperty.call(seen, 'toBlock')).toBe(false);
+    expect(seen?.toBlock).toBe(5);
     expect(seen?.includeAllBlocks).toBe(true);
   });
 
@@ -458,7 +460,8 @@ describe('handlers', () => {
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
       PORTAL_CHAIN_ID: '1',
-      UPSTREAM_RPC_URL: 'https://upstream.rpc'
+      UPSTREAM_RPC_URL: 'https://upstream.rpc',
+      UPSTREAM_METHODS_ENABLED: 'true'
     });
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { hash: '0x1' } }))
@@ -568,7 +571,8 @@ describe('handlers', () => {
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
       PORTAL_CHAIN_ID: '1',
-      UPSTREAM_RPC_URL: 'https://upstream.rpc'
+      UPSTREAM_RPC_URL: 'https://upstream.rpc',
+      UPSTREAM_METHODS_ENABLED: 'true'
     });
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: ['ok'] }))
@@ -586,7 +590,8 @@ describe('handlers', () => {
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
       PORTAL_CHAIN_ID: '1',
-      UPSTREAM_RPC_URL: 'https://upstream.rpc'
+      UPSTREAM_RPC_URL: 'https://upstream.rpc',
+      UPSTREAM_METHODS_ENABLED: 'true'
     });
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: [] }))
@@ -604,7 +609,8 @@ describe('handlers', () => {
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
       PORTAL_CHAIN_ID: '1',
-      UPSTREAM_RPC_URL: 'https://upstream.rpc'
+      UPSTREAM_RPC_URL: 'https://upstream.rpc',
+      UPSTREAM_METHODS_ENABLED: 'true'
     });
     const fetchImpl = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(init.body as string) as { method: string; id: number };
@@ -638,6 +644,23 @@ describe('handlers', () => {
     const { response, httpStatus } = await handleJsonRpc(
       { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByHash', params: [hash, false] },
       { config, portal: portal as any, chainId: 1, requestId: 'test' }
+    );
+    expect(httpStatus).toBe(404);
+    expect(response!.error?.code).toBe(-32601);
+  });
+
+  it('rejects hash-based methods when upstream disabled', async () => {
+    const configDisabled = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      UPSTREAM_RPC_URL: 'https://upstream.rpc',
+      UPSTREAM_METHODS_ENABLED: 'false'
+    });
+    const hash = '0x' + '11'.repeat(32);
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByHash', params: [hash, false] },
+      { config: configDisabled, portal: portal as any, chainId: 1, requestId: 'test' }
     );
     expect(httpStatus).toBe(404);
     expect(response!.error?.code).toBe(-32601);

@@ -112,6 +112,12 @@ Example mapping (keep aligned with `thirdparty/sqd_chain_mapping.go`):
 
 Unsupported -> JSON-RPC `-32601` + HTTP 404.
 
+Optional upstream-only methods (when `UPSTREAM_METHODS_ENABLED=true` and upstream configured):
+- `eth_getBlockByHash`
+- `eth_getTransactionByHash`
+- `eth_getTransactionReceipt`
+- `trace_transaction`
+
 ## Translation Rules
 
 ### `eth_chainId`
@@ -128,6 +134,7 @@ Unsupported -> JSON-RPC `-32601` + HTTP 404.
 - `POST /stream` with `fromBlock=toBlock`.
 - `fullTx` true -> full tx fields; false -> hash only.
 - Empty -> `result: null`.
+- `uncles` is empty unless upstream enrichment is enabled.
 
 ### `eth_getTransactionByBlockNumberAndIndex`
 
@@ -242,7 +249,7 @@ If `toBlock` not set and `fromBlock` uses finalized/safe, still use non-finalize
 
 ## Validation Rules
 
-- Block number: hex/dec/int; range `0..(1<<62)`.
+- Block number: hex/dec/int; range `0..(2^53-1)` (Number.MAX_SAFE_INTEGER).
 - `eth_getLogs`:
   - `fromBlock <= toBlock`.
   - Max range 1,000,000 blocks; warn > 10,000.
@@ -303,11 +310,17 @@ Use these exact substrings (case-sensitive) to match eRPC normalization:
 - `PORTAL_API_KEY` (optional)
 - `PORTAL_API_KEY_HEADER` (default `X-API-Key`)
 
+### Upstream (Optional)
+
+- `UPSTREAM_RPC_URL` (optional)
+- `UPSTREAM_RPC_URL_MAP` (chainId -> URL)
+- `UPSTREAM_METHODS_ENABLED` (default `false`)
+
 ### Limits
 
 - `MAX_LOG_BLOCK_RANGE` (default 1_000_000)
 - `MAX_LOG_ADDRESSES` (default 1000)
-- `MAX_BLOCK_NUMBER` (default 2^62)
+- `MAX_BLOCK_NUMBER` (default 2^53-1)
 - `HTTP_TIMEOUT` (default 60s)
 
 ### Auth (Incoming)

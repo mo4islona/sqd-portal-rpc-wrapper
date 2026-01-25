@@ -27,6 +27,7 @@ export interface Config {
   maxRequestBodyBytes: number;
   upstreamRpcUrl?: string;
   upstreamRpcUrlMap: Record<string, string>;
+  upstreamMethodsEnabled: boolean;
   handlerTimeoutMs: number;
   portalCircuitBreakerThreshold: number;
   portalCircuitBreakerResetMs: number;
@@ -87,6 +88,7 @@ export function loadConfig(env = process.env): Config {
     validateUrl(upstreamRpcUrl, 'UPSTREAM_RPC_URL');
   }
   const upstreamRpcUrlMap = parseUrlMap(env.UPSTREAM_RPC_URL_MAP);
+  const upstreamMethodsEnabled = parseBoolean(env.UPSTREAM_METHODS_ENABLED, false);
   const portalCircuitBreakerThreshold = parseNumber(
     env.PORTAL_CIRCUIT_BREAKER_THRESHOLD,
     DEFAULT_CIRCUIT_BREAKER_THRESHOLD
@@ -131,6 +133,7 @@ export function loadConfig(env = process.env): Config {
     maxRequestBodyBytes,
     upstreamRpcUrl,
     upstreamRpcUrlMap,
+    upstreamMethodsEnabled,
     handlerTimeoutMs,
     portalCircuitBreakerThreshold,
     portalCircuitBreakerResetMs,
@@ -193,7 +196,7 @@ function parseOptionalInt(raw?: string): number | undefined {
     return undefined;
   }
   const value = Number(raw);
-  if (!Number.isFinite(value)) {
+  if (!Number.isFinite(value) || !Number.isInteger(value)) {
     throw new Error(`invalid number: ${raw}`);
   }
   return value;

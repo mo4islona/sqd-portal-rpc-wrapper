@@ -382,16 +382,18 @@ export const __test__ = {
   timingSafeCompare
 };
 
-const JSON_RPC_METHODS = [
+const JSON_RPC_BASE_METHODS = [
   'eth_chainId',
   'eth_blockNumber',
   'eth_getBlockByNumber',
+  'eth_getTransactionByBlockNumberAndIndex',
+  'eth_getLogs',
+  'trace_block'
+];
+const JSON_RPC_UPSTREAM_METHODS = [
   'eth_getBlockByHash',
   'eth_getTransactionByHash',
   'eth_getTransactionReceipt',
-  'eth_getTransactionByBlockNumberAndIndex',
-  'eth_getLogs',
-  'trace_block',
   'trace_transaction'
 ];
 
@@ -410,6 +412,9 @@ async function prefetchMetadata(server: FastifyInstance, portal: PortalClient, c
         metrics.portal_realtime_enabled.labels(chainId).set(Number(realTime));
         server.log.info({ chainId: Number(chainId), dataset, realTime }, 'portal metadata prefetched');
       } catch (err) {
+        if (config.portalRealtimeMode === 'required') {
+          throw err;
+        }
         server.log.warn(
           { chainId: Number(chainId), dataset, err: err instanceof Error ? err.message : String(err) },
           'portal metadata prefetch failed'
@@ -428,6 +433,8 @@ async function checkPortalReady(config: Config, portal: PortalClient, requestId?
   await Promise.all(
     entries.map(async ([_chainId, dataset]) => {
       const baseUrl = portal.buildDatasetBaseUrl(dataset);
+      const metadata = await portal.getMetadata(baseUrl, undefined, requestId);
+      resolveRealtimeEnabled(metadata, config.portalRealtimeMode);
       await portal.fetchHead(baseUrl, false, undefined, requestId);
     })
   );
@@ -453,6 +460,9 @@ async function buildCapabilities(
         realTime = resolveRealtimeEnabled(metadata, config.portalRealtimeMode);
         metrics.portal_realtime_enabled.labels(chainId).set(Number(realTime));
       } catch (err) {
+        if (config.portalRealtimeMode === 'required') {
+          throw err;
+        }
         logger.warn(
           { chainId: Number(chainId), dataset, error: String(err) },
           'portal metadata fetch failed'
@@ -467,10 +477,24 @@ async function buildCapabilities(
   return {
     service: { name: 'sqd-portal-rpc-wrapper', version: process.env.npm_package_version || '0.1.0' },
     mode: config.serviceMode,
-    methods: JSON_RPC_METHODS,
+    methods: resolveAdvertisedMethods(config),
     chains,
     portalEndpoints: portalEndpointsTemplate(config)
   };
+}
+
+function resolveAdvertisedMethods(config: Config): string[] {
+  if (!config.upstreamMethodsEnabled || !isUpstreamConfigured(config)) {
+    return JSON_RPC_BASE_METHODS;
+  }
+  return [...JSON_RPC_BASE_METHODS, ...JSON_RPC_UPSTREAM_METHODS];
+}
+
+function isUpstreamConfigured(config: Config): boolean {
+  if (config.upstreamRpcUrl) {
+    return true;
+  }
+  return Object.values(config.upstreamRpcUrlMap).some((value) => value.trim() !== '');
 }
 
 function portalEndpointsTemplate(config: Config) {

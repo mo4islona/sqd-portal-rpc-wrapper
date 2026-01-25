@@ -122,13 +122,15 @@ describe('config', () => {
       PORTAL_CIRCUIT_BREAKER_THRESHOLD: '2',
       PORTAL_CIRCUIT_BREAKER_RESET_MS: '5000',
       PORTAL_INCLUDE_ALL_BLOCKS: 'true',
-      PORTAL_OPEN_ENDED_STREAM: '1'
+      PORTAL_OPEN_ENDED_STREAM: '1',
+      UPSTREAM_METHODS_ENABLED: 'true'
     });
     expect(cfg.handlerTimeoutMs).toBe(1234);
     expect(cfg.portalCircuitBreakerThreshold).toBe(2);
     expect(cfg.portalCircuitBreakerResetMs).toBe(5000);
     expect(cfg.portalIncludeAllBlocks).toBe(true);
     expect(cfg.portalOpenEndedStream).toBe(true);
+    expect(cfg.upstreamMethodsEnabled).toBe(true);
   });
 
   it('parses boolean false values', () => {
@@ -137,10 +139,22 @@ describe('config', () => {
       PORTAL_DATASET: 'ethereum-mainnet',
       PORTAL_CHAIN_ID: '1',
       PORTAL_INCLUDE_ALL_BLOCKS: 'false',
-      PORTAL_OPEN_ENDED_STREAM: '0'
+      PORTAL_OPEN_ENDED_STREAM: '0',
+      UPSTREAM_METHODS_ENABLED: 'false'
     });
     expect(cfg.portalIncludeAllBlocks).toBe(false);
     expect(cfg.portalOpenEndedStream).toBe(false);
+    expect(cfg.upstreamMethodsEnabled).toBe(false);
+  });
+
+  it('rejects non-integer chain id', () => {
+    expect(() =>
+      loadConfig({
+        SERVICE_MODE: 'single',
+        PORTAL_DATASET: 'ethereum-mainnet',
+        PORTAL_CHAIN_ID: '1.5'
+      })
+    ).toThrow('invalid number');
   });
 
   it('rejects invalid boolean values', () => {

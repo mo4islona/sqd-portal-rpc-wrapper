@@ -66,7 +66,9 @@ Notes:
   - `required`: require realtime metadata; error if portal does not advertise realtime.
 
 ## JSON-RPC Behavior (No new methods)
-- No change to existing method allowlist.
+- Default allowlist is historical-only (6 methods above).
+- Optional upstream-only methods (when `UPSTREAM_METHODS_ENABLED=true` and upstream configured):
+  `eth_getBlockByHash`, `eth_getTransactionByHash`, `eth_getTransactionReceipt`, `trace_transaction`.
 - Existing finalized fallback behavior unchanged.
 
 ## Errors
@@ -82,4 +84,5 @@ Notes:
 
 ## Risks / Notes
 - Portal EVM realtime availability not guaranteed; default to disabled + passthrough.
+- JSON-RPC responses remain bounded; open-ended streams are reserved for future streaming endpoints.
 - Clients should handle empty responses / 404 / 409 from portal.
