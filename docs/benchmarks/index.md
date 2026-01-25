@@ -1,6 +1,6 @@
 # Benchmarks
 
-Generated: 2026-01-25 23:03:03 UTC
+Generated: 2026-01-25 23:26:57 UTC
 
 ## Summary
 
@@ -8,16 +8,16 @@ Methods with successful measurements on both wrapper and reference RPC:
 
 | method | wrapper mean ms | rpc mean ms | speedup (rpc/wrapper) |
 | --- | --- | --- | --- |
-| eth_blockNumber | 41.1 | 44.23 | 1.08x |
-| eth_getBlockByHash | 48.97 | 42.9 | 0.88x |
-| eth_getBlockByNumber(fullTx=false) | 96.93 | 46.26 | 0.48x |
-| eth_getBlockByNumber(fullTx=true) | 101.69 | 54.52 | 0.54x |
-| eth_getLogs | 52.7 | 42.38 | 0.8x |
-| eth_getTransactionByBlockNumberAndIndex | 92.75 | 44.16 | 0.48x |
-| eth_getTransactionByHash | 43.2 | 42.21 | 0.98x |
-| eth_getTransactionReceipt | 45.92 | 40.55 | 0.88x |
-| trace_block | 280.28 | 214.7 | 0.77x |
-| trace_transaction | 51.11 | 44.62 | 0.87x |
+| eth_blockNumber | 37.24 | 50.59 | 1.36x |
+| eth_getBlockByHash | 46.51 | 43.79 | 0.94x |
+| eth_getBlockByNumber(fullTx=false) | 95.58 | 44.08 | 0.46x |
+| eth_getBlockByNumber(fullTx=true) | 97.73 | 59.2 | 0.61x |
+| eth_getLogs | 51.79 | 40.25 | 0.78x |
+| eth_getTransactionByBlockNumberAndIndex | 92.67 | 42.74 | 0.46x |
+| eth_getTransactionByHash | 42.39 | 40.84 | 0.96x |
+| eth_getTransactionReceipt | 45.06 | 42.3 | 0.94x |
+| trace_block | 239.98 | 196.4 | 0.82x |
+| trace_transaction | 43.03 | 39.3 | 0.91x |
 
 Batch sizing impact:
 
@@ -25,48 +25,52 @@ Batch sizing impact:
 
 | target | batch size | mean ms | mean ms / req | request bytes | chunks |
 | --- | --- | --- | --- | --- | --- |
-| wrapper | 1 | 47.27 | 47.27 | 65 | 1 |
-| rpc | 1 | 43.47 | 43.47 | 65 | 1 |
-| wrapper | 5 | 41.86 | 8.37 | 321 | 1 |
-| rpc | 5 | 49.75 | 9.95 | 321 | 1 |
-| wrapper | 10 | 41.85 | 4.19 | 642 | 1 |
-| rpc | 10 | 50.1 | 5.01 | 642 | 1 |
-| wrapper | 25 | 42.13 | 1.69 | 1617 | 1 |
-| rpc | 25 | 55.13 | 2.21 | 1617 | 1 |
-| wrapper | 1000 | 47.46 | 0.05 | 65894 | 1 |
-| rpc | 1000 | 231.21 | 0.23 | 65894 | 1 |
-| wrapper | 10000 | 56.22 | 0.01 | 668895 | 1 |
-| rpc | 10000 | 2563.68 | 0.26 | 668895 | 10 |
+| wrapper | 1 | 41.64 | 41.64 | 65 | 1 |
+| rpc | 1 | 41.44 | 41.44 | 65 | 1 |
+| wrapper | 5 | 38.32 | 7.66 | 321 | 1 |
+| rpc | 5 | 45.51 | 9.1 | 321 | 1 |
+| wrapper | 10 | 37.66 | 3.77 | 642 | 1 |
+| rpc | 10 | 48.6 | 4.86 | 642 | 1 |
+| wrapper | 25 | 36.75 | 1.47 | 1617 | 1 |
+| rpc | 25 | 53.51 | 2.14 | 1617 | 1 |
+| wrapper | 1000 | 39.69 | 0.04 | 65894 | 1 |
+| rpc | 1000 | 229.68 | 0.23 | 65894 | 1 |
+| wrapper | 10000 | 56.28 | 0.01 | 668895 | 1 |
+| rpc | 10000 | 2324.54 | 0.23 | 668895 | 10 |
 
 ### eth_getBlockByNumber
 
 | target | batch size | mean ms | mean ms / req | request bytes | chunks |
 | --- | --- | --- | --- | --- | --- |
-| wrapper | 1 | 102.55 | 102.55 | 87 | 1 |
-| rpc | 1 | 45.01 | 45.01 | 87 | 1 |
-| wrapper | 5 | 86.67 | 17.33 | 431 | 1 |
-| rpc | 5 | 53.24 | 10.65 | 431 | 1 |
-| wrapper | 10 | 88.65 | 8.87 | 862 | 1 |
-| rpc | 10 | 59.2 | 5.92 | 862 | 1 |
-| wrapper | 25 | 89.69 | 3.59 | 2167 | 1 |
-| rpc | 25 | 74.35 | 2.97 | 2167 | 1 |
-| wrapper | 100 | 98.06 | 0.98 | 8693 | 1 |
-| rpc | 100 | 100.78 | 1.01 | 8693 | 1 |
+| wrapper | 1 | 91.64 | 91.64 | 87 | 1 |
+| rpc | 1 | 43.35 | 43.35 | 87 | 1 |
+| wrapper | 5 | 83.82 | 16.76 | 431 | 1 |
+| rpc | 5 | 47.94 | 9.59 | 431 | 1 |
+| wrapper | 10 | 80.51 | 8.05 | 862 | 1 |
+| rpc | 10 | 54.4 | 5.44 | 862 | 1 |
+| wrapper | 25 | 90.55 | 3.62 | 2167 | 1 |
+| rpc | 25 | 65.85 | 2.63 | 2167 | 1 |
+| wrapper | 1000 | 139.79 | 0.14 | 87894 | 1 |
+| rpc | 1000 | 276.57 | 0.28 | 87894 | 1 |
+| wrapper | 10000 | 438.53 | 0.04 | 888895 | 1 |
+| rpc | 10000 | 3402.79 | 0.34 | 888895 | 10 |
 
 ### eth_getLogs
 
 | target | batch size | mean ms | mean ms / req | request bytes | chunks |
 | --- | --- | --- | --- | --- | --- |
-| wrapper | 1 | 55.88 | 55.88 | 243 | 1 |
-| rpc | 1 | 45.39 | 45.39 | 243 | 1 |
-| wrapper | 5 | 55.32 | 11.06 | 1211 | 1 |
-| rpc | 5 | 55.74 | 11.15 | 1211 | 1 |
-| wrapper | 10 | 52.27 | 5.23 | 2422 | 1 |
-| rpc | 10 | 63.74 | 6.37 | 2422 | 1 |
-| wrapper | 25 | 54.87 | 2.19 | 6067 | 1 |
-| rpc | 25 | 61.72 | 2.47 | 6067 | 1 |
-| wrapper | 100 | 62.73 | 0.63 | 24293 | 1 |
-| rpc | 100 | 88.2 | 0.88 | 24293 | 1 |
+| wrapper | 1 | 55.87 | 55.87 | 243 | 1 |
+| rpc | 1 | 41.15 | 41.15 | 243 | 1 |
+| wrapper | 5 | 48.79 | 9.76 | 1211 | 1 |
+| rpc | 5 | 44.27 | 8.85 | 1211 | 1 |
+| wrapper | 10 | 46.98 | 4.7 | 2422 | 1 |
+| rpc | 10 | 55.51 | 5.55 | 2422 | 1 |
+| wrapper | 25 | 49.94 | 2 | 6067 | 1 |
+| rpc | 25 | 73.27 | 2.93 | 6067 | 1 |
+| wrapper | 100 | 57.66 | 0.58 | 24293 | 1 |
+| rpc | 100 | 79.2 | 0.79 | 24293 | 1 |
+| wrapper | 100000 | 4083.11 | 0.04 | 24588896 | 100 |
+| rpc | 100000 | 24428.35 | 0.24 | 24588896 | 100 |
 
 
 Note: some large batches were split into chunks due to upstream limits. The "chunks" column indicates how many requests were used.
@@ -78,8 +82,8 @@ Note: some large batches were split into chunks due to upstream limits. The "chu
 <LatencyChart
   title="Mean Latency by Method"
   :labels='["eth_blockNumber", "eth_getBlockByHash", "eth_getBlockByNumber (no tx)", "eth_getBlockByNumber (full tx)", "eth_getLogs", "eth_getTransactionByBlockNumberAndIndex", "eth_getTransactionByHash", "eth_getTransactionReceipt", "trace_block", "trace_transaction"]'
-  :wrapper-data="[41.1, 48.97, 96.93, 101.69, 52.7, 92.75, 43.2, 45.92, 280.28, 51.11]"
-  :rpc-data="[44.23, 42.9, 46.26, 54.52, 42.38, 44.16, 42.21, 40.55, 214.7, 44.62]"
+  :wrapper-data="[37.24, 46.51, 95.58, 97.73, 51.79, 92.67, 42.39, 45.06, 239.98, 43.03]"
+  :rpc-data="[50.59, 43.79, 44.08, 59.2, 40.25, 42.74, 40.84, 42.3, 196.4, 39.3]"
   y-axis-label="Mean Latency (ms)"
 />
 
@@ -88,8 +92,8 @@ Note: some large batches were split into chunks due to upstream limits. The "chu
 <LatencyChart
   title="P95 Latency by Method"
   :labels='["eth_blockNumber", "eth_getBlockByHash", "eth_getBlockByNumber (no tx)", "eth_getBlockByNumber (full tx)", "eth_getLogs", "eth_getTransactionByBlockNumberAndIndex", "eth_getTransactionByHash", "eth_getTransactionReceipt", "trace_block", "trace_transaction"]'
-  :wrapper-data="[65.64, 56.93, 153.64, 123.64, 62.38, 134.47, 47.64, 51.98, 347.17, 65.73]"
-  :rpc-data="[58.61, 47.17, 61.84, 77.6, 48.64, 60.34, 51.6, 45.47, 275.3, 52.73]"
+  :wrapper-data="[39.3, 62.81, 216.27, 146.16, 55.9, 147.85, 44.69, 49.22, 322.43, 52.55]"
+  :rpc-data="[64.21, 57.25, 48.48, 115.44, 44.15, 50.66, 54.94, 51.78, 245.01, 46.75]"
   y-axis-label="P95 Latency (ms)"
 />
 
@@ -97,7 +101,7 @@ Note: some large batches were split into chunks due to upstream limits. The "chu
 
 <SpeedupChart
   :labels='["eth_blockNumber", "eth_getBlockByHash", "eth_getBlockByNumber (no tx)", "eth_getBlockByNumber (full tx)", "eth_getLogs", "eth_getTransactionByBlockNumberAndIndex", "eth_getTransactionByHash", "eth_getTransactionReceipt", "trace_block", "trace_transaction"]'
-  :speedups="[1.08, 0.88, 0.48, 0.54, 0.8, 0.48, 0.98, 0.88, 0.77, 0.87]"
+  :speedups="[1.36, 0.94, 0.46, 0.61, 0.78, 0.46, 0.96, 0.94, 0.82, 0.91]"
 />
 
 ### Batch Size Scaling
@@ -107,22 +111,22 @@ The wrapper excels at large batch requests due to Portal's efficient data retrie
 <BatchChart
   title="eth_blockNumber: Batch Size vs Latency"
   :batch-sizes="[1, 5, 10, 25, 1000, 10000]"
-  :wrapper-data="[47.27, 41.86, 41.85, 42.13, 47.46, 56.22]"
-  :rpc-data="[43.47, 49.75, 50.1, 55.13, 231.21, 2563.68]"
+  :wrapper-data="[41.64, 38.32, 37.66, 36.75, 39.69, 56.28]"
+  :rpc-data="[41.44, 45.51, 48.6, 53.51, 229.68, 2324.54]"
 />
 
 <BatchChart
   title="eth_getBlockByNumber: Batch Size vs Latency"
-  :batch-sizes="[1, 5, 10, 25, 100]"
-  :wrapper-data="[102.55, 86.67, 88.65, 89.69, 98.06]"
-  :rpc-data="[45.01, 53.24, 59.2, 74.35, 100.78]"
+  :batch-sizes="[1, 5, 10, 25, 1000, 10000]"
+  :wrapper-data="[91.64, 83.82, 80.51, 90.55, 139.79, 438.53]"
+  :rpc-data="[43.35, 47.94, 54.4, 65.85, 276.57, 3402.79]"
 />
 
 <BatchChart
   title="eth_getLogs: Batch Size vs Latency"
-  :batch-sizes="[1, 5, 10, 25, 100]"
-  :wrapper-data="[55.88, 55.32, 52.27, 54.87, 62.73]"
-  :rpc-data="[45.39, 55.74, 63.74, 61.72, 88.2]"
+  :batch-sizes="[1, 5, 10, 25, 100, 100000]"
+  :wrapper-data="[55.87, 48.79, 46.98, 49.94, 57.66, 4083.11]"
+  :rpc-data="[41.15, 44.27, 55.51, 73.27, 79.2, 24428.35]"
 />
 
 
@@ -136,7 +140,7 @@ The wrapper excels at large batch requests due to Portal's efficient data retrie
 - delay_ms: 50
 - timeout_ms: 60000
 - batch_sizes: 1,5,10,25,1000,10000
-- batch_sizes_heavy: 1,5,10,25,100
+- batch_sizes_heavy: 1,5,10,25,100,100000
 - batch_methods: eth_blockNumber,eth_getBlockByNumber,eth_getLogs
 - bench_methods: eth_blockNumber,eth_getBlockByNumber,eth_getBlockByHash,eth_getTransactionByHash,eth_getTransactionReceipt,eth_getTransactionByBlockNumberAndIndex,eth_getLogs,trace_block,trace_transaction
 - batch_chunk_size: 1000
@@ -146,151 +150,161 @@ The wrapper excels at large batch requests due to Portal's efficient data retrie
 
 | target | method | ok | errors | mean ms | p95 ms | request bytes |
 | --- | --- | --- | --- | --- | --- | --- |
-| wrapper | eth_blockNumber | 10 | 0 | 41.1 | 65.64 | 63 |
-| rpc | eth_blockNumber | 10 | 0 | 44.23 | 58.61 | 63 |
-| wrapper | eth_getBlockByHash | 10 | 0 | 48.97 | 56.93 | 140 |
-| rpc | eth_getBlockByHash | 10 | 0 | 42.9 | 47.17 | 140 |
-| wrapper | eth_getBlockByNumber(fullTx=false) | 10 | 0 | 96.93 | 153.64 | 85 |
-| rpc | eth_getBlockByNumber(fullTx=false) | 10 | 0 | 46.26 | 61.84 | 85 |
-| wrapper | eth_getBlockByNumber(fullTx=true) | 10 | 0 | 101.69 | 123.64 | 84 |
-| rpc | eth_getBlockByNumber(fullTx=true) | 10 | 0 | 54.52 | 77.6 | 84 |
-| wrapper | eth_getLogs | 10 | 0 | 52.7 | 62.38 | 241 |
-| rpc | eth_getLogs | 10 | 0 | 42.38 | 48.64 | 241 |
-| wrapper | eth_getTransactionByBlockNumberAndIndex | 10 | 0 | 92.75 | 134.47 | 104 |
-| rpc | eth_getTransactionByBlockNumberAndIndex | 10 | 0 | 44.16 | 60.34 | 104 |
-| wrapper | eth_getTransactionByHash | 10 | 0 | 43.2 | 47.64 | 140 |
-| rpc | eth_getTransactionByHash | 10 | 0 | 42.21 | 51.6 | 140 |
-| wrapper | eth_getTransactionReceipt | 10 | 0 | 45.92 | 51.98 | 141 |
-| rpc | eth_getTransactionReceipt | 10 | 0 | 40.55 | 45.47 | 141 |
-| wrapper | trace_block | 10 | 0 | 280.28 | 347.17 | 70 |
-| rpc | trace_block | 10 | 0 | 214.7 | 275.3 | 70 |
-| wrapper | trace_transaction | 10 | 0 | 51.11 | 65.73 | 133 |
-| rpc | trace_transaction | 10 | 0 | 44.62 | 52.73 | 133 |
+| wrapper | eth_blockNumber | 10 | 0 | 37.24 | 39.3 | 63 |
+| rpc | eth_blockNumber | 10 | 0 | 50.59 | 64.21 | 63 |
+| wrapper | eth_getBlockByHash | 10 | 0 | 46.51 | 62.81 | 140 |
+| rpc | eth_getBlockByHash | 10 | 0 | 43.79 | 57.25 | 140 |
+| wrapper | eth_getBlockByNumber(fullTx=false) | 10 | 0 | 95.58 | 216.27 | 85 |
+| rpc | eth_getBlockByNumber(fullTx=false) | 10 | 0 | 44.08 | 48.48 | 85 |
+| wrapper | eth_getBlockByNumber(fullTx=true) | 10 | 0 | 97.73 | 146.16 | 84 |
+| rpc | eth_getBlockByNumber(fullTx=true) | 10 | 0 | 59.2 | 115.44 | 84 |
+| wrapper | eth_getLogs | 10 | 0 | 51.79 | 55.9 | 241 |
+| rpc | eth_getLogs | 10 | 0 | 40.25 | 44.15 | 241 |
+| wrapper | eth_getTransactionByBlockNumberAndIndex | 10 | 0 | 92.67 | 147.85 | 104 |
+| rpc | eth_getTransactionByBlockNumberAndIndex | 10 | 0 | 42.74 | 50.66 | 104 |
+| wrapper | eth_getTransactionByHash | 10 | 0 | 42.39 | 44.69 | 140 |
+| rpc | eth_getTransactionByHash | 10 | 0 | 40.84 | 54.94 | 140 |
+| wrapper | eth_getTransactionReceipt | 10 | 0 | 45.06 | 49.22 | 141 |
+| rpc | eth_getTransactionReceipt | 10 | 0 | 42.3 | 51.78 | 141 |
+| wrapper | trace_block | 10 | 0 | 239.98 | 322.43 | 70 |
+| rpc | trace_block | 10 | 0 | 196.4 | 245.01 | 70 |
+| wrapper | trace_transaction | 10 | 0 | 43.03 | 52.55 | 133 |
+| rpc | trace_transaction | 10 | 0 | 39.3 | 46.75 | 133 |
 
 ## Batch Results
 
 | target | method | batch size | ok | errors | mean ms | p95 ms | mean ms / req | request bytes | chunks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| wrapper | eth_blockNumber (batch=1) | 1 | 10 | 0 | 47.27 | 96.51 | 47.27 | 65 | 1 |
-| rpc | eth_blockNumber (batch=1) | 1 | 10 | 0 | 43.47 | 47.67 | 43.47 | 65 | 1 |
-| wrapper | eth_blockNumber (batch=5) | 5 | 50 | 0 | 41.86 | 44.63 | 8.37 | 321 | 1 |
-| rpc | eth_blockNumber (batch=5) | 5 | 50 | 0 | 49.75 | 56 | 9.95 | 321 | 1 |
-| wrapper | eth_blockNumber (batch=10) | 10 | 100 | 0 | 41.85 | 44.26 | 4.19 | 642 | 1 |
-| rpc | eth_blockNumber (batch=10) | 10 | 100 | 0 | 50.1 | 62.82 | 5.01 | 642 | 1 |
-| wrapper | eth_blockNumber (batch=25) | 25 | 250 | 0 | 42.13 | 44.45 | 1.69 | 1617 | 1 |
-| rpc | eth_blockNumber (batch=25) | 25 | 250 | 0 | 55.13 | 75.4 | 2.21 | 1617 | 1 |
-| wrapper | eth_blockNumber (batch=1000) | 1000 | 10000 | 0 | 47.46 | 54.49 | 0.05 | 65894 | 1 |
-| rpc | eth_blockNumber (batch=1000) | 1000 | 10000 | 0 | 231.21 | 325.44 | 0.23 | 65894 | 1 |
-| wrapper | eth_blockNumber (batch=10000) | 10000 | 100000 | 0 | 56.22 | 62.12 | 0.01 | 668895 | 1 |
-| rpc | eth_blockNumber (batch=10000) | 10000 | 100000 | 0 | 2563.68 | 3695.65 | 0.26 | 668895 | 10 |
-| wrapper | eth_getBlockByNumber (batch=1) | 1 | 10 | 0 | 102.55 | 247.48 | 102.55 | 87 | 1 |
-| rpc | eth_getBlockByNumber (batch=1) | 1 | 10 | 0 | 45.01 | 48.42 | 45.01 | 87 | 1 |
-| wrapper | eth_getBlockByNumber (batch=5) | 5 | 50 | 0 | 86.67 | 91.18 | 17.33 | 431 | 1 |
-| rpc | eth_getBlockByNumber (batch=5) | 5 | 50 | 0 | 53.24 | 62.14 | 10.65 | 431 | 1 |
-| wrapper | eth_getBlockByNumber (batch=10) | 10 | 100 | 0 | 88.65 | 99.11 | 8.87 | 862 | 1 |
-| rpc | eth_getBlockByNumber (batch=10) | 10 | 100 | 0 | 59.2 | 82.39 | 5.92 | 862 | 1 |
-| wrapper | eth_getBlockByNumber (batch=25) | 25 | 250 | 0 | 89.69 | 100.13 | 3.59 | 2167 | 1 |
-| rpc | eth_getBlockByNumber (batch=25) | 25 | 250 | 0 | 74.35 | 140.68 | 2.97 | 2167 | 1 |
-| wrapper | eth_getBlockByNumber (batch=100) | 100 | 1000 | 0 | 98.06 | 103.67 | 0.98 | 8693 | 1 |
-| rpc | eth_getBlockByNumber (batch=100) | 100 | 1000 | 0 | 100.78 | 184.82 | 1.01 | 8693 | 1 |
-| wrapper | eth_getLogs (batch=1) | 1 | 10 | 0 | 55.88 | 60.55 | 55.88 | 243 | 1 |
-| rpc | eth_getLogs (batch=1) | 1 | 10 | 0 | 45.39 | 53.46 | 45.39 | 243 | 1 |
-| wrapper | eth_getLogs (batch=5) | 5 | 50 | 0 | 55.32 | 65.42 | 11.06 | 1211 | 1 |
-| rpc | eth_getLogs (batch=5) | 5 | 50 | 0 | 55.74 | 95.03 | 11.15 | 1211 | 1 |
-| wrapper | eth_getLogs (batch=10) | 10 | 100 | 0 | 52.27 | 55.05 | 5.23 | 2422 | 1 |
-| rpc | eth_getLogs (batch=10) | 10 | 100 | 0 | 63.74 | 135.62 | 6.37 | 2422 | 1 |
-| wrapper | eth_getLogs (batch=25) | 25 | 250 | 0 | 54.87 | 73.3 | 2.19 | 6067 | 1 |
-| rpc | eth_getLogs (batch=25) | 25 | 250 | 0 | 61.72 | 76.3 | 2.47 | 6067 | 1 |
-| wrapper | eth_getLogs (batch=100) | 100 | 1000 | 0 | 62.73 | 108.16 | 0.63 | 24293 | 1 |
-| rpc | eth_getLogs (batch=100) | 100 | 1000 | 0 | 88.2 | 149.14 | 0.88 | 24293 | 1 |
+| wrapper | eth_blockNumber (batch=1) | 1 | 10 | 0 | 41.64 | 91.56 | 41.64 | 65 | 1 |
+| rpc | eth_blockNumber (batch=1) | 1 | 10 | 0 | 41.44 | 49.21 | 41.44 | 65 | 1 |
+| wrapper | eth_blockNumber (batch=5) | 5 | 50 | 0 | 38.32 | 40.76 | 7.66 | 321 | 1 |
+| rpc | eth_blockNumber (batch=5) | 5 | 50 | 0 | 45.51 | 56.24 | 9.1 | 321 | 1 |
+| wrapper | eth_blockNumber (batch=10) | 10 | 100 | 0 | 37.66 | 40.18 | 3.77 | 642 | 1 |
+| rpc | eth_blockNumber (batch=10) | 10 | 100 | 0 | 48.6 | 59.3 | 4.86 | 642 | 1 |
+| wrapper | eth_blockNumber (batch=25) | 25 | 250 | 0 | 36.75 | 38.94 | 1.47 | 1617 | 1 |
+| rpc | eth_blockNumber (batch=25) | 25 | 250 | 0 | 53.51 | 63.68 | 2.14 | 1617 | 1 |
+| wrapper | eth_blockNumber (batch=1000) | 1000 | 10000 | 0 | 39.69 | 41.47 | 0.04 | 65894 | 1 |
+| rpc | eth_blockNumber (batch=1000) | 1000 | 10000 | 0 | 229.68 | 360.44 | 0.23 | 65894 | 1 |
+| wrapper | eth_blockNumber (batch=10000) | 10000 | 100000 | 0 | 56.28 | 68.88 | 0.01 | 668895 | 1 |
+| rpc | eth_blockNumber (batch=10000) | 10000 | 100000 | 0 | 2324.54 | 3231.37 | 0.23 | 668895 | 10 |
+| wrapper | eth_getBlockByNumber (batch=1) | 1 | 10 | 0 | 91.64 | 197.06 | 91.64 | 87 | 1 |
+| rpc | eth_getBlockByNumber (batch=1) | 1 | 10 | 0 | 43.35 | 48.58 | 43.35 | 87 | 1 |
+| wrapper | eth_getBlockByNumber (batch=5) | 5 | 50 | 0 | 83.82 | 125.44 | 16.76 | 431 | 1 |
+| rpc | eth_getBlockByNumber (batch=5) | 5 | 50 | 0 | 47.94 | 58.08 | 9.59 | 431 | 1 |
+| wrapper | eth_getBlockByNumber (batch=10) | 10 | 100 | 0 | 80.51 | 88.69 | 8.05 | 862 | 1 |
+| rpc | eth_getBlockByNumber (batch=10) | 10 | 100 | 0 | 54.4 | 74.06 | 5.44 | 862 | 1 |
+| wrapper | eth_getBlockByNumber (batch=25) | 25 | 250 | 0 | 90.55 | 106.45 | 3.62 | 2167 | 1 |
+| rpc | eth_getBlockByNumber (batch=25) | 25 | 250 | 0 | 65.85 | 108.84 | 2.63 | 2167 | 1 |
+| wrapper | eth_getBlockByNumber (batch=1000) | 1000 | 10000 | 0 | 139.79 | 154.37 | 0.14 | 87894 | 1 |
+| rpc | eth_getBlockByNumber (batch=1000) | 1000 | 10000 | 0 | 276.57 | 322.21 | 0.28 | 87894 | 1 |
+| wrapper | eth_getBlockByNumber (batch=10000) | 10000 | 100000 | 0 | 438.53 | 499.13 | 0.04 | 888895 | 1 |
+| rpc | eth_getBlockByNumber (batch=10000) | 10000 | 100000 | 0 | 3402.79 | 4035.42 | 0.34 | 888895 | 10 |
+| wrapper | eth_getLogs (batch=1) | 1 | 10 | 0 | 55.87 | 126.22 | 55.87 | 243 | 1 |
+| rpc | eth_getLogs (batch=1) | 1 | 10 | 0 | 41.15 | 45.89 | 41.15 | 243 | 1 |
+| wrapper | eth_getLogs (batch=5) | 5 | 50 | 0 | 48.79 | 57.42 | 9.76 | 1211 | 1 |
+| rpc | eth_getLogs (batch=5) | 5 | 50 | 0 | 44.27 | 51.3 | 8.85 | 1211 | 1 |
+| wrapper | eth_getLogs (batch=10) | 10 | 100 | 0 | 46.98 | 50.12 | 4.7 | 2422 | 1 |
+| rpc | eth_getLogs (batch=10) | 10 | 100 | 0 | 55.51 | 75.44 | 5.55 | 2422 | 1 |
+| wrapper | eth_getLogs (batch=25) | 25 | 250 | 0 | 49.94 | 54.79 | 2 | 6067 | 1 |
+| rpc | eth_getLogs (batch=25) | 25 | 250 | 0 | 73.27 | 154.49 | 2.93 | 6067 | 1 |
+| wrapper | eth_getLogs (batch=100) | 100 | 1000 | 0 | 57.66 | 76.1 | 0.58 | 24293 | 1 |
+| rpc | eth_getLogs (batch=100) | 100 | 1000 | 0 | 79.2 | 141.44 | 0.79 | 24293 | 1 |
+| wrapper | eth_getLogs (batch=100000) | 100000 | 309000 | 691000 | 4083.11 | 5986.02 | 0.04 | 24588896 | 100 |
+| rpc | eth_getLogs (batch=100000) | 100000 | 212552 | 787448 | 24428.35 | 27425.25 | 0.24 | 24588896 | 100 |
 
 ## Graphs (mean ms)
 
 ```
 eth_blockNumber
-  wrapper    41.10 |##############################  |
-  rpc        44.23 |################################|
+  wrapper    37.24 |########################        |
+  rpc        50.59 |################################|
 eth_getBlockByHash
-  wrapper    48.97 |################################|
-  rpc        42.90 |############################    |
+  wrapper    46.51 |################################|
+  rpc        43.79 |##############################  |
 eth_getBlockByNumber(fullTx=false)
-  wrapper    96.93 |################################|
-  rpc        46.26 |###############                 |
+  wrapper    95.58 |################################|
+  rpc        44.08 |###############                 |
 eth_getBlockByNumber(fullTx=true)
-  wrapper    101.69 |################################|
-  rpc        54.52 |#################               |
+  wrapper    97.73 |################################|
+  rpc        59.20 |###################             |
 eth_getLogs
-  wrapper    52.70 |################################|
-  rpc        42.38 |##########################      |
+  wrapper    51.79 |################################|
+  rpc        40.25 |#########################       |
 eth_getTransactionByBlockNumberAndIndex
-  wrapper    92.75 |################################|
-  rpc        44.16 |###############                 |
+  wrapper    92.67 |################################|
+  rpc        42.74 |###############                 |
 eth_getTransactionByHash
-  wrapper    43.20 |################################|
-  rpc        42.21 |############################### |
+  wrapper    42.39 |################################|
+  rpc        40.84 |############################### |
 eth_getTransactionReceipt
-  wrapper    45.92 |################################|
-  rpc        40.55 |############################    |
+  wrapper    45.06 |################################|
+  rpc        42.30 |##############################  |
 trace_block
-  wrapper    280.28 |################################|
-  rpc        214.70 |#########################       |
+  wrapper    239.98 |################################|
+  rpc        196.40 |##########################      |
 trace_transaction
-  wrapper    51.11 |################################|
-  rpc        44.62 |############################    |
+  wrapper    43.03 |################################|
+  rpc        39.30 |#############################   |
 
 Batch: eth_blockNumber
   size=1
-    wrapper    47.27 |################################|
-    rpc        43.47 |#############################   |
+    wrapper    41.64 |################################|
+    rpc        41.44 |################################|
   size=5
-    wrapper    41.86 |###########################     |
-    rpc        49.75 |################################|
+    wrapper    38.32 |###########################     |
+    rpc        45.51 |################################|
   size=10
-    wrapper    41.85 |###########################     |
-    rpc        50.10 |################################|
+    wrapper    37.66 |#########################       |
+    rpc        48.60 |################################|
   size=25
-    wrapper    42.13 |########################        |
-    rpc        55.13 |################################|
+    wrapper    36.75 |######################          |
+    rpc        53.51 |################################|
   size=1000
-    wrapper    47.46 |#######                         |
-    rpc        231.21 |################################|
+    wrapper    39.69 |######                          |
+    rpc        229.68 |################################|
   size=10000
-    wrapper    56.22 |#                               |
-    rpc        2563.68 |################################|
+    wrapper    56.28 |#                               |
+    rpc        2324.54 |################################|
 
 Batch: eth_getBlockByNumber
   size=1
-    wrapper    102.55 |################################|
-    rpc        45.01 |##############                  |
+    wrapper    91.64 |################################|
+    rpc        43.35 |###############                 |
   size=5
-    wrapper    86.67 |################################|
-    rpc        53.24 |####################            |
+    wrapper    83.82 |################################|
+    rpc        47.94 |##################              |
   size=10
-    wrapper    88.65 |################################|
-    rpc        59.20 |#####################           |
+    wrapper    80.51 |################################|
+    rpc        54.40 |######################          |
   size=25
-    wrapper    89.69 |################################|
-    rpc        74.35 |###########################     |
-  size=100
-    wrapper    98.06 |############################### |
-    rpc        100.78 |################################|
+    wrapper    90.55 |################################|
+    rpc        65.85 |#######################         |
+  size=1000
+    wrapper    139.79 |################                |
+    rpc        276.57 |################################|
+  size=10000
+    wrapper    438.53 |####                            |
+    rpc        3402.79 |################################|
 
 Batch: eth_getLogs
   size=1
-    wrapper    55.88 |################################|
-    rpc        45.39 |##########################      |
+    wrapper    55.87 |################################|
+    rpc        41.15 |########################        |
   size=5
-    wrapper    55.32 |################################|
-    rpc        55.74 |################################|
+    wrapper    48.79 |################################|
+    rpc        44.27 |#############################   |
   size=10
-    wrapper    52.27 |##########################      |
-    rpc        63.74 |################################|
+    wrapper    46.98 |###########################     |
+    rpc        55.51 |################################|
   size=25
-    wrapper    54.87 |############################    |
-    rpc        61.72 |################################|
+    wrapper    49.94 |######################          |
+    rpc        73.27 |################################|
   size=100
-    wrapper    62.73 |#######################         |
-    rpc        88.20 |################################|
+    wrapper    57.66 |#######################         |
+    rpc        79.20 |################################|
+  size=100000
+    wrapper    4083.11 |#####                           |
+    rpc        24428.35 |################################|
 
 ```
 
@@ -298,33 +312,33 @@ Batch: eth_getLogs
 
 ```
 eth_blockNumber
-  wrapper    65.64 |################################|
-  rpc        58.61 |#############################   |
+  wrapper    39.30 |####################            |
+  rpc        64.21 |################################|
 eth_getBlockByHash
-  wrapper    56.93 |################################|
-  rpc        47.17 |###########################     |
+  wrapper    62.81 |################################|
+  rpc        57.25 |#############################   |
 eth_getBlockByNumber(fullTx=false)
-  wrapper    153.64 |################################|
-  rpc        61.84 |#############                   |
+  wrapper    216.27 |################################|
+  rpc        48.48 |#######                         |
 eth_getBlockByNumber(fullTx=true)
-  wrapper    123.64 |################################|
-  rpc        77.60 |####################            |
+  wrapper    146.16 |################################|
+  rpc        115.44 |#########################       |
 eth_getLogs
-  wrapper    62.38 |################################|
-  rpc        48.64 |#########################       |
+  wrapper    55.90 |################################|
+  rpc        44.15 |#########################       |
 eth_getTransactionByBlockNumberAndIndex
-  wrapper    134.47 |################################|
-  rpc        60.34 |##############                  |
+  wrapper    147.85 |################################|
+  rpc        50.66 |###########                     |
 eth_getTransactionByHash
-  wrapper    47.64 |##############################  |
-  rpc        51.60 |################################|
+  wrapper    44.69 |##########################      |
+  rpc        54.94 |################################|
 eth_getTransactionReceipt
-  wrapper    51.98 |################################|
-  rpc        45.47 |############################    |
+  wrapper    49.22 |##############################  |
+  rpc        51.78 |################################|
 trace_block
-  wrapper    347.17 |################################|
-  rpc        275.30 |#########################       |
+  wrapper    322.43 |################################|
+  rpc        245.01 |########################        |
 trace_transaction
-  wrapper    65.73 |################################|
-  rpc        52.73 |##########################      |
+  wrapper    52.55 |################################|
+  rpc        46.75 |############################    |
 ```
