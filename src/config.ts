@@ -25,6 +25,8 @@ export interface Config {
   maxNdjsonLineBytes: number;
   maxNdjsonBytes: number;
   maxRequestBodyBytes: number;
+  upstreamRpcUrl?: string;
+  upstreamRpcUrlMap: Record<string, string>;
 }
 
 const DEFAULT_LISTEN = ':8080';
@@ -71,6 +73,8 @@ export function loadConfig(env = process.env): Config {
 
   const wrapperApiKey = env.WRAPPER_API_KEY;
   const wrapperApiKeyHeader = env.WRAPPER_API_KEY_HEADER || 'X-API-Key';
+  const upstreamRpcUrl = env.UPSTREAM_RPC_URL;
+  const upstreamRpcUrlMap = parseUrlMap(env.UPSTREAM_RPC_URL_MAP);
 
   if (serviceMode === 'single') {
     if (!portalDataset && Object.keys(portalDatasetMap).length === 0) {
@@ -102,7 +106,9 @@ export function loadConfig(env = process.env): Config {
     maxConcurrentRequests,
     maxNdjsonLineBytes,
     maxNdjsonBytes,
-    maxRequestBodyBytes
+    maxRequestBodyBytes,
+    upstreamRpcUrl,
+    upstreamRpcUrlMap
   };
 }
 
@@ -125,6 +131,24 @@ function parseDatasetMap(raw?: string): Record<string, string> {
   const parsed = JSON.parse(raw);
   if (!parsed || typeof parsed !== 'object') {
     throw new Error('PORTAL_DATASET_MAP must be JSON object');
+  }
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value !== 'string' || value.trim() === '') {
+      continue;
+    }
+    result[String(key)] = value;
+  }
+  return result;
+}
+
+function parseUrlMap(raw?: string): Record<string, string> {
+  if (!raw) {
+    return {};
+  }
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('UPSTREAM_RPC_URL_MAP must be JSON object');
   }
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(parsed)) {

@@ -1,6 +1,6 @@
 import { Config } from '../config';
 import { PortalClient } from '../portal/client';
-import { blockHashFilterError, invalidParams, pendingBlockError, rangeTooLargeError, tooManyAddressesError } from '../errors';
+import { invalidParams, pendingBlockError, tooManyAddressesError } from '../errors';
 import { validateHexBytesLength } from '../util/hex';
 
 const ADDRESS_BYTES = 20;
@@ -85,19 +85,30 @@ export function parseTransactionIndex(value: unknown): number {
   throw invalidParams('invalid transaction index');
 }
 
-export interface ParsedLogFilter {
-  fromBlock: number;
-  toBlock: number;
-  useFinalized: boolean;
-  range: number;
-  logFilter: {
-    address?: string[];
-    topic0?: string[];
-    topic1?: string[];
-    topic2?: string[];
-    topic3?: string[];
-  };
-}
+export type ParsedLogFilter =
+  | {
+      blockHash: string;
+      logFilter: {
+        address?: string[];
+        topic0?: string[];
+        topic1?: string[];
+        topic2?: string[];
+        topic3?: string[];
+      };
+    }
+  | {
+      fromBlock: number;
+      toBlock: number;
+      useFinalized: boolean;
+      range: number;
+      logFilter: {
+        address?: string[];
+        topic0?: string[];
+        topic1?: string[];
+        topic2?: string[];
+        topic3?: string[];
+      };
+    };
 
 export async function parseLogFilter(
   portal: PortalClient,
@@ -106,47 +117,90 @@ export async function parseLogFilter(
   config: Config,
   traceparent?: string
 ): Promise<ParsedLogFilter> {
-  if ('blockHash' in filter) {
-    throw blockHashFilterError();
-  }
-
   let fromBlock: ParsedBlockTag | null = null;
   let toBlock: ParsedBlockTag | null = null;
+  let blockHash: string | undefined;
 
-  if (filter.fromBlock !== undefined) {
-    fromBlock = await parseBlockNumber(portal, baseUrl, filter.fromBlock, config, traceparent);
-  }
-  if (filter.toBlock !== undefined) {
-    toBlock = await parseBlockNumber(portal, baseUrl, filter.toBlock, config, traceparent);
-  }
-  if (!toBlock) {
-    if (fromBlock?.useFinalized) {
-      const { head, finalizedAvailable } = await portal.fetchHead(baseUrl, true, 'finalized', traceparent);
-      toBlock = { number: head.number, useFinalized: finalizedAvailable };
-    } else {
-      const { head } = await portal.fetchHead(baseUrl, false, '', traceparent);
-      toBlock = { number: head.number, useFinalized: false };
+  if (filter.blockHash !== undefined) {
+    if (filter.fromBlock !== undefined || filter.toBlock !== undefined) {
+      throw invalidParams('invalid block range');
     }
-  }
-  if (!fromBlock) {
-    fromBlock = { number: toBlock.number, useFinalized: false };
-  }
-
-  const useFinalized = toBlock.useFinalized;
-
-  if (toBlock.number < fromBlock.number) {
-    throw invalidParams('invalid block range');
-  }
-  const blockRange = toBlock.number - fromBlock.number + 1;
-  if (blockRange > config.maxLogBlockRange) {
-    throw rangeTooLargeError(config.maxLogBlockRange);
+    if (typeof filter.blockHash !== 'string') {
+      throw invalidParams('invalid blockHash filter');
+    }
+    try {
+      validateHexBytesLength('blockHash', filter.blockHash, 32);
+    } catch {
+      throw invalidParams('invalid blockHash filter');
+    }
+    blockHash = filter.blockHash.toLowerCase();
   }
 
+  if (!blockHash) {
+    if (filter.fromBlock !== undefined) {
+      fromBlock = await parseBlockNumber(portal, baseUrl, filter.fromBlock, config, traceparent);
+    }
+    if (filter.toBlock !== undefined) {
+      toBlock = await parseBlockNumber(portal, baseUrl, filter.toBlock, config, traceparent);
+    }
+    if (!toBlock) {
+      if (fromBlock?.useFinalized) {
+        const { head, finalizedAvailable } = await portal.fetchHead(baseUrl, true, 'finalized', traceparent);
+        toBlock = { number: head.number, useFinalized: finalizedAvailable };
+      } else {
+        const { head } = await portal.fetchHead(baseUrl, false, '', traceparent);
+        toBlock = { number: head.number, useFinalized: false };
+      }
+    }
+    if (!fromBlock) {
+      fromBlock = { number: toBlock.number, useFinalized: false };
+    }
+
+    const useFinalized = toBlock.useFinalized;
+
+    if (toBlock.number < fromBlock.number) {
+      throw invalidParams('invalid block range');
+    }
+    const blockRange = toBlock.number - fromBlock.number + 1;
+    const logFilter = buildLogFilter(filter, config);
+    return {
+      fromBlock: fromBlock.number,
+      toBlock: toBlock.number,
+      useFinalized,
+      range: blockRange,
+      logFilter
+    };
+  }
+
+  const logFilter = buildLogFilter(filter, config);
+  return {
+    blockHash,
+    logFilter
+  };
+}
+
+export function assertObject(value: unknown, message: string): asserts value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw invalidParams(message);
+  }
+}
+
+export function assertArray(value: unknown, message: string): asserts value is unknown[] {
+  if (!Array.isArray(value)) {
+    throw invalidParams(message);
+  }
+}
+
+function buildLogFilter(filter: Record<string, unknown>, config: Config): ParsedLogFilter['logFilter'] {
   const logFilter: ParsedLogFilter['logFilter'] = {};
   if (filter.address !== undefined) {
     const addr = filter.address;
     if (typeof addr === 'string') {
-      validateHexBytesLength('address', addr, ADDRESS_BYTES);
+      try {
+        validateHexBytesLength('address', addr, ADDRESS_BYTES);
+      } catch {
+        throw invalidParams('invalid address filter');
+      }
       logFilter.address = [addr.toLowerCase()];
     } else if (Array.isArray(addr)) {
       if (addr.length > config.maxLogAddresses) {
@@ -157,7 +211,11 @@ export async function parseLogFilter(
         if (typeof value !== 'string') {
           throw invalidParams('invalid address filter');
         }
-        validateHexBytesLength('address', value, ADDRESS_BYTES);
+        try {
+          validateHexBytesLength('address', value, ADDRESS_BYTES);
+        } catch {
+          throw invalidParams('invalid address filter');
+        }
         addrs.push(value.toLowerCase());
       }
       logFilter.address = addrs;
@@ -179,14 +237,22 @@ export async function parseLogFilter(
       }
       const values: string[] = [];
       if (typeof topic === 'string') {
-        validateHexBytesLength('topic', topic, TOPIC_BYTES);
+        try {
+          validateHexBytesLength('topic', topic, TOPIC_BYTES);
+        } catch {
+          throw invalidParams('invalid topic filter');
+        }
         values.push(topic.toLowerCase());
       } else if (Array.isArray(topic)) {
         for (const entry of topic) {
           if (typeof entry !== 'string') {
             throw invalidParams('invalid topic filter');
           }
-          validateHexBytesLength('topic', entry, TOPIC_BYTES);
+          try {
+            validateHexBytesLength('topic', entry, TOPIC_BYTES);
+          } catch {
+            throw invalidParams('invalid topic filter');
+          }
           values.push(entry.toLowerCase());
         }
       } else {
@@ -199,23 +265,5 @@ export async function parseLogFilter(
     });
   }
 
-  return {
-    fromBlock: fromBlock.number,
-    toBlock: toBlock.number,
-    useFinalized,
-    range: blockRange,
-    logFilter
-  };
-}
-
-export function assertObject(value: unknown, message: string): asserts value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw invalidParams(message);
-  }
-}
-
-export function assertArray(value: unknown, message: string): asserts value is unknown[] {
-  if (!Array.isArray(value)) {
-    throw invalidParams(message);
-  }
+  return logFilter;
 }

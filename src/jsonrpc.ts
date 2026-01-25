@@ -16,30 +16,47 @@ export type JsonRpcResponse =
 
 export type JsonRpcPayload = JsonRpcRequest | JsonRpcRequest[];
 
+export interface ParsedJsonRpcItem {
+  request?: JsonRpcRequest;
+  error?: JsonRpcResponse;
+}
+
+export interface ParsedJsonRpcPayload {
+  items: ParsedJsonRpcItem[];
+  isBatch: boolean;
+}
+
 export function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
   if (!value || typeof value !== 'object') {
     return false;
   }
   const req = value as JsonRpcRequest;
-  return req.jsonrpc === '2.0' && typeof req.method === 'string';
+  if (req.jsonrpc !== '2.0' || typeof req.method !== 'string') {
+    return false;
+  }
+  if ('id' in req && !isValidId(req.id)) {
+    return false;
+  }
+  if ('params' in req && !isValidParams(req.params)) {
+    return false;
+  }
+  return true;
 }
 
-export function parseJsonRpcPayload(payload: unknown): JsonRpcRequest[] {
+export function parseJsonRpcPayload(payload: unknown): ParsedJsonRpcPayload {
   if (Array.isArray(payload)) {
     if (payload.length === 0) {
       throw invalidRequest('invalid request');
     }
-    return payload.map((item) => {
-      if (!isJsonRpcRequest(item)) {
-        throw invalidRequest('invalid request');
-      }
-      return item;
-    });
+    const items = payload.map((item) =>
+      isJsonRpcRequest(item) ? { request: item } : { error: errorResponse(null, invalidRequest('invalid request')) }
+    );
+    return { items, isBatch: true };
   }
   if (!isJsonRpcRequest(payload)) {
     throw invalidRequest('invalid request');
   }
-  return [payload];
+  return { items: [{ request: payload }], isBatch: false };
 }
 
 export function successResponse(id: JsonRpcId, result: unknown): JsonRpcResponse {
@@ -70,4 +87,18 @@ export function responseId(req: JsonRpcRequest): JsonRpcId {
     return null;
   }
   return req.id;
+}
+
+function isValidId(id: unknown): id is JsonRpcId {
+  if (id === null) return true;
+  if (typeof id === 'string') return true;
+  if (typeof id === 'number') return Number.isFinite(id);
+  return false;
+}
+
+function isValidParams(params: unknown): params is JsonRpcParams {
+  if (params === null) return true;
+  if (Array.isArray(params)) return true;
+  if (typeof params === 'object') return true;
+  return false;
 }

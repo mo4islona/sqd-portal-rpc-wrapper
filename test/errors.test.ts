@@ -3,7 +3,6 @@ import {
   rangeTooLargeError,
   tooManyAddressesError,
   pendingBlockError,
-  blockHashFilterError,
   invalidRequest,
   parseError,
   normalizeError,
@@ -26,11 +25,6 @@ describe('errors', () => {
   it('pending block message matches', () => {
     const err = pendingBlockError();
     expect(err.message).toContain('pending block not found');
-  });
-
-  it('blockHash message matches', () => {
-    const err = blockHashFilterError();
-    expect(err.message).toContain('blockHash filter not supported');
   });
 
   it('builds invalid request error', () => {

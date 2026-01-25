@@ -27,3 +27,7 @@
 ## Incoming Auth
 - `WRAPPER_API_KEY`: require incoming header
 - `WRAPPER_API_KEY_HEADER`: header name, default `X-API-Key`
+
+## Upstream RPC Fallback
+- `UPSTREAM_RPC_URL`: optional JSON-RPC upstream URL
+- `UPSTREAM_RPC_URL_MAP`: JSON object chainId->URL (overrides `UPSTREAM_RPC_URL`)

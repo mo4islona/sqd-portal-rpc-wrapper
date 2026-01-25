@@ -67,6 +67,7 @@ export interface PortalBlockResponse {
   logs?: PortalLog[];
   traces?: PortalTrace[];
   stateDiffs?: PortalStateDiff[];
+  withdrawals?: PortalWithdrawal[];
 }
 
 export interface PortalBlockHeader {
@@ -89,6 +90,10 @@ export interface PortalBlockHeader {
   extraData: string;
   mixHash: string;
   sha3Uncles: string;
+  withdrawalsRoot?: string;
+  blobGasUsed?: unknown;
+  excessBlobGas?: unknown;
+  parentBeaconBlockRoot?: string;
 }
 
 export interface PortalTransaction {
@@ -109,6 +114,9 @@ export interface PortalTransaction {
   s?: string;
   yParity?: unknown;
   chainId?: unknown;
+  accessList?: unknown;
+  maxFeePerBlobGas?: unknown;
+  blobVersionedHashes?: unknown;
 }
 
 export interface PortalLog {
@@ -185,6 +193,13 @@ export interface PortalStateDiff {
   next?: string;
 }
 
+export interface PortalWithdrawal {
+  index: number;
+  validatorIndex: number;
+  address: string;
+  amount: unknown;
+}
+
 const allBlockFields = {
   number: true,
   hash: true,
@@ -204,7 +219,11 @@ const allBlockFields = {
   logsBloom: true,
   extraData: true,
   mixHash: true,
-  sha3Uncles: true
+  sha3Uncles: true,
+  withdrawalsRoot: true,
+  blobGasUsed: true,
+  excessBlobGas: true,
+  parentBeaconBlockRoot: true
 };
 
 const txHashOnlyFields = {
@@ -229,7 +248,10 @@ const allTransactionFields = {
   r: true,
   s: true,
   yParity: true,
-  chainId: true
+  chainId: true,
+  accessList: true,
+  maxFeePerBlobGas: true,
+  blobVersionedHashes: true
 };
 
 const allLogFields = {

@@ -80,13 +80,22 @@ describe('conversion', () => {
     expect('totalDifficulty' in result).toBe(false);
   });
 
+  it('passes through non-hex nonce values', () => {
+    const block: PortalBlockResponse = {
+      header: { ...header, nonce: 'not-hex' },
+      transactions: []
+    };
+    const result = convertBlockToRpc(block, false);
+    expect(result.nonce).toBe('not-hex');
+  });
+
   it('normalizes numeric nonce', () => {
     const block: PortalBlockResponse = {
       header: { ...header, nonce: 10 },
       transactions: []
     };
     const result = convertBlockToRpc(block, false);
-    expect(result.nonce).toBe('0xa');
+    expect(result.nonce).toBe('0x000000000000000a');
   });
 
   it('converts tx with hex quantities', () => {
@@ -98,6 +107,37 @@ describe('conversion', () => {
     expect(result.maxPriorityFeePerGas).toBe('0x7');
     expect(result.chainId).toBe('0x1');
     expect(result.yParity).toBe('0x1');
+  });
+
+  it('converts withdrawals when present', () => {
+    const block: PortalBlockResponse = {
+      header: { ...header, withdrawalsRoot: '0x' + '11'.repeat(32) },
+      withdrawals: [{ index: 1, validatorIndex: 2, address: '0x' + '11'.repeat(20), amount: '0x3' }],
+      transactions: []
+    };
+    const result = convertBlockToRpc(block, false) as { withdrawals?: Record<string, unknown>[]; withdrawalsRoot?: string };
+    expect(result.withdrawalsRoot).toBe('0x' + '11'.repeat(32));
+    expect(result.withdrawals?.[0].amount).toBe('0x3');
+  });
+
+  it('includes blob and beacon header fields when present', () => {
+    const block: PortalBlockResponse = {
+      header: {
+        ...header,
+        blobGasUsed: '0x10',
+        excessBlobGas: '0x11',
+        parentBeaconBlockRoot: '0x' + '22'.repeat(32)
+      },
+      transactions: []
+    };
+    const result = convertBlockToRpc(block, false) as {
+      blobGasUsed?: string;
+      excessBlobGas?: string;
+      parentBeaconBlockRoot?: string;
+    };
+    expect(result.blobGasUsed).toBe('0x10');
+    expect(result.excessBlobGas).toBe('0x11');
+    expect(result.parentBeaconBlockRoot).toBe('0x' + '22'.repeat(32));
   });
 
   it('omits optional tx fields when missing', () => {
@@ -124,6 +164,27 @@ describe('conversion', () => {
     const creationTx: PortalTransaction = { ...tx, to: undefined };
     const result = convertTxToRpc(creationTx, header);
     expect(result.to).toBeNull();
+  });
+
+  it('preserves zero-value signature fields', () => {
+    const zeroSig: PortalTransaction = { ...tx, v: '0x0', r: '0x0', s: '0x0' };
+    const result = convertTxToRpc(zeroSig, header);
+    expect(result.v).toBe('0x0');
+    expect(result.r).toBe('0x0');
+    expect(result.s).toBe('0x0');
+  });
+
+  it('adds blob and access list fields when present', () => {
+    const withBlob: PortalTransaction = {
+      ...tx,
+      accessList: [],
+      maxFeePerBlobGas: '0x9',
+      blobVersionedHashes: ['0x' + 'ab'.repeat(32)]
+    };
+    const result = convertTxToRpc(withBlob, header);
+    expect(result.accessList).toEqual([]);
+    expect(result.maxFeePerBlobGas).toBe('0x9');
+    expect(result.blobVersionedHashes).toEqual(['0x' + 'ab'.repeat(32)]);
   });
 
   it('converts log', () => {

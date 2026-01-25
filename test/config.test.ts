@@ -82,6 +82,16 @@ describe('config', () => {
     expect(cfg.portalDatasetMap).toEqual({ '2': 'ethereum-mainnet' });
   });
 
+  it('parses upstream rpc url map', () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      UPSTREAM_RPC_URL_MAP: '{"1":"https://rpc","2":""}'
+    });
+    expect(cfg.upstreamRpcUrlMap).toEqual({ '1': 'https://rpc' });
+  });
+
   it('requires chain id when dataset map has multiple entries', () => {
     expect(() =>
       loadConfig({
@@ -124,5 +134,16 @@ describe('config', () => {
         PORTAL_CHAIN_ID: '1'
       })
     ).toThrow();
+  });
+
+  it('rejects invalid upstream rpc map', () => {
+    expect(() =>
+      loadConfig({
+        SERVICE_MODE: 'single',
+        PORTAL_DATASET: 'ethereum-mainnet',
+        PORTAL_CHAIN_ID: '1',
+        UPSTREAM_RPC_URL_MAP: '[]'
+      })
+    ).toThrow('UPSTREAM_RPC_URL_MAP');
   });
 });

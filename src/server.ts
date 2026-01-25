@@ -8,6 +8,7 @@ import { PortalClient, normalizePortalBaseUrl } from './portal/client';
 import type { PortalStreamHeaders } from './portal/client';
 import { parseJsonRpcPayload, JsonRpcResponse } from './jsonrpc';
 import { handleJsonRpc } from './rpc/handlers';
+import { UpstreamRpcClient } from './rpc/upstream';
 import { ConcurrencyLimiter } from './util/concurrency';
 import { normalizeError, unauthorizedError, overloadError, RpcError, invalidParams, invalidRequest, parseError } from './errors';
 import { defaultDatasetMap } from './portal/mapping';
@@ -100,6 +101,7 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
   });
 
   const portal = new PortalClient(config, { logger: server.log });
+  const upstream = new UpstreamRpcClient(config, { logger: server.log });
   const limiter = new ConcurrencyLimiter(config.maxConcurrentRequests);
 
   await prefetchMetadata(server, portal, config);
@@ -121,10 +123,10 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
       if (headerChainId === null) {
         return replyInvalidChainId(reply);
       }
-      return handleRpcRequest(req, reply, config, portal, limiter, headerChainId);
+      return handleRpcRequest(req, reply, config, portal, upstream, limiter, headerChainId);
     }
     const chainId = config.portalChainId ?? extractSingleChainIdFromMap(config);
-    return handleRpcRequest(req, reply, config, portal, limiter, chainId);
+    return handleRpcRequest(req, reply, config, portal, upstream, limiter, chainId);
   });
 
   server.post('/v1/evm/:chainId', async (req, reply) => {
@@ -136,7 +138,7 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
     if (chainId === null) {
       return replyInvalidChainId(reply);
     }
-    return handleRpcRequest(req, reply, config, portal, limiter, chainId);
+    return handleRpcRequest(req, reply, config, portal, upstream, limiter, chainId);
   });
 
   return server;
@@ -147,6 +149,7 @@ async function handleRpcRequest(
   reply: FastifyReply,
   config: Config,
   portal: PortalClient,
+  upstream: UpstreamRpcClient,
   limiter: ConcurrencyLimiter,
   chainId: number
 ) {
@@ -180,7 +183,7 @@ async function handleRpcRequest(
     const traceparent = typeof req.headers.traceparent === 'string' ? req.headers.traceparent : undefined;
     const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : randomUUID();
     const payload = req.body;
-    const requests = parseJsonRpcPayload(payload);
+    const parsed = parseJsonRpcPayload(payload);
     const portalHeaders: PortalStreamHeaders = {};
     const recordPortalHeaders = (headers: PortalStreamHeaders) => {
       if (headers.finalizedHeadNumber && !portalHeaders.finalizedHeadNumber) {
@@ -194,7 +197,15 @@ async function handleRpcRequest(
     const responses: JsonRpcResponse[] = [];
     let maxStatus = 200;
 
-    for (const request of requests) {
+    for (const item of parsed.items) {
+      if (item.error) {
+        responses.push(item.error);
+        maxStatus = Math.max(maxStatus, 400);
+        metrics.errors_total.labels('invalid_request').inc();
+        metrics.requests_total.labels('invalid_request', String(chainId), '400').inc();
+        continue;
+      }
+      const request = item.request!;
       const hasId = 'id' in request;
       const { response, httpStatus } = await handleJsonRpc(request, {
         config,
@@ -203,7 +214,8 @@ async function handleRpcRequest(
         traceparent,
         requestId,
         logger: req.log,
-        recordPortalHeaders
+        recordPortalHeaders,
+        upstream
       });
       if (hasId) {
         responses.push(response);
@@ -223,9 +235,11 @@ async function handleRpcRequest(
       return;
     }
 
-    const output = Array.isArray(payload) ? responses : responses[0];
+    const output = parsed.isBatch ? responses : responses[0];
     const body = JSON.stringify(output);
-    const labelMethod = Array.isArray(payload) ? 'batch' : requests[0]?.method || 'unknown';
+    const firstRequest = parsed.items.find((item) => item.request)?.request;
+    const labelMethod = parsed.isBatch ? 'batch' : firstRequest?.method || 'unknown';
+    const methods = parsed.items.flatMap((item) => (item.request ? [item.request.method] : []));
     metrics.response_bytes_total.labels(labelMethod, String(chainId)).inc(Buffer.byteLength(body));
 
     if (portalHeaders.finalizedHeadNumber) {
@@ -236,10 +250,7 @@ async function handleRpcRequest(
     }
     reply.type('application/json').code(maxStatus).send(output);
     const durationMs = Date.now() - startedAt;
-    req.log.info(
-      { requestId, chainId, methods: requests.map((r) => r.method), status: maxStatus, durationMs },
-      'rpc response'
-    );
+    req.log.info({ requestId, chainId, methods, status: maxStatus, durationMs }, 'rpc response');
   } catch (err) {
     const rpcError = err instanceof RpcError ? err : normalizeError(err);
     metrics.errors_total.labels(rpcError.category).inc();

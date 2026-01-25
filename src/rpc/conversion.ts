@@ -1,5 +1,5 @@
 import { quantityHex, quantityHexIfSet } from '../util/quantity';
-import { PortalBlockResponse, PortalBlockHeader, PortalTransaction, PortalLog, PortalTrace } from '../portal/types';
+import { PortalBlockResponse, PortalBlockHeader, PortalTransaction, PortalLog, PortalTrace, PortalWithdrawal } from '../portal/types';
 
 export function convertBlockToRpc(block: PortalBlockResponse, fullTx: boolean): Record<string, unknown> {
   const h = block.header;
@@ -31,6 +31,23 @@ export function convertBlockToRpc(block: PortalBlockResponse, fullTx: boolean): 
   const totalDifficulty = quantityHexIfSet(h.totalDifficulty);
   if (totalDifficulty !== undefined) {
     result.totalDifficulty = totalDifficulty;
+  }
+  if (h.withdrawalsRoot) {
+    result.withdrawalsRoot = h.withdrawalsRoot;
+  }
+  const blobGasUsed = quantityHexIfSet(h.blobGasUsed);
+  if (blobGasUsed !== undefined) {
+    result.blobGasUsed = blobGasUsed;
+  }
+  const excessBlobGas = quantityHexIfSet(h.excessBlobGas);
+  if (excessBlobGas !== undefined) {
+    result.excessBlobGas = excessBlobGas;
+  }
+  if (h.parentBeaconBlockRoot) {
+    result.parentBeaconBlockRoot = h.parentBeaconBlockRoot;
+  }
+  if (block.withdrawals) {
+    result.withdrawals = block.withdrawals.map((withdrawal) => convertWithdrawalToRpc(withdrawal));
   }
 
   if (fullTx) {
@@ -84,9 +101,17 @@ export function convertTxToRpc(tx: PortalTransaction, header: PortalBlockHeader)
   if (yParity !== undefined) {
     result.yParity = yParity;
   }
-  if (tx.v) result.v = tx.v;
-  if (tx.r) result.r = tx.r;
-  if (tx.s) result.s = tx.s;
+  if (tx.v !== undefined) result.v = tx.v;
+  if (tx.r !== undefined) result.r = tx.r;
+  if (tx.s !== undefined) result.s = tx.s;
+  if (tx.accessList !== undefined) result.accessList = tx.accessList;
+  const maxFeePerBlobGas = quantityHexIfSet(tx.maxFeePerBlobGas);
+  if (maxFeePerBlobGas !== undefined) {
+    result.maxFeePerBlobGas = maxFeePerBlobGas;
+  }
+  if (tx.blobVersionedHashes !== undefined) {
+    result.blobVersionedHashes = tx.blobVersionedHashes;
+  }
 
   return result;
 }
@@ -238,8 +263,22 @@ function toHex(value: number): string {
 }
 
 function normalizeNonce(value: unknown): string {
-  if (typeof value === 'string') {
-    return value;
+  const hex = typeof value === 'string' ? value : quantityHex(value);
+  if (!hex.startsWith('0x')) {
+    return hex;
   }
-  return quantityHex(value);
+  const raw = hex.slice(2);
+  if (raw.length >= 16) {
+    return `0x${raw.padStart(16, '0')}`;
+  }
+  return `0x${raw.padStart(16, '0')}`;
+}
+
+function convertWithdrawalToRpc(withdrawal: PortalWithdrawal): Record<string, unknown> {
+  return {
+    index: toHex(withdrawal.index),
+    validatorIndex: toHex(withdrawal.validatorIndex),
+    address: withdrawal.address,
+    amount: quantityHex(withdrawal.amount)
+  };
 }

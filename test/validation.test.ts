@@ -83,10 +83,37 @@ describe('validation', () => {
     );
   });
 
-  it('rejects blockHash filter', async () => {
+  it('parses blockHash filter', async () => {
+    const result = await parseLogFilter(
+      portal as any,
+      'https://portal',
+      { blockHash: '0x' + 'aa'.repeat(32) },
+      config
+    );
+    expect(result.blockHash).toBe('0x' + 'aa'.repeat(32));
+  });
+
+  it('rejects blockHash with range params', async () => {
     await expect(
-      parseLogFilter(portal as any, 'https://portal', { blockHash: '0xabc' }, config)
-    ).rejects.toThrow('blockHash filter not supported');
+      parseLogFilter(
+        portal as any,
+        'https://portal',
+        { blockHash: '0x' + 'aa'.repeat(32), fromBlock: '0x1' },
+        config
+      )
+    ).rejects.toThrow('invalid block range');
+  });
+
+  it('rejects non-string blockHash filter', async () => {
+    await expect(
+      parseLogFilter(portal as any, 'https://portal', { blockHash: 123 } as any, config)
+    ).rejects.toThrow('invalid blockHash filter');
+  });
+
+  it('rejects blockHash with invalid length', async () => {
+    await expect(
+      parseLogFilter(portal as any, 'https://portal', { blockHash: '0x1234' }, config)
+    ).rejects.toThrow('invalid blockHash filter');
   });
 
   it('rejects too many addresses', async () => {
@@ -116,6 +143,12 @@ describe('validation', () => {
     expect(result.logFilter.address).toHaveLength(1);
   });
 
+  it('rejects invalid address length', async () => {
+    await expect(
+      parseLogFilter(portal as any, 'https://portal', { address: '0x1234' }, config)
+    ).rejects.toThrow('invalid address filter');
+  });
+
   it('parses address array filter', async () => {
     const result = await parseLogFilter(
       portal as any,
@@ -138,6 +171,28 @@ describe('validation', () => {
       config
     );
     expect(result.logFilter.topic1).toHaveLength(2);
+  });
+
+  it('rejects invalid topic length', async () => {
+    await expect(
+      parseLogFilter(
+        portal as any,
+        'https://portal',
+        { fromBlock: '0x1', toBlock: '0x1', topics: ['0x1234'] },
+        config
+      )
+    ).rejects.toThrow('invalid topic filter');
+  });
+
+  it('rejects invalid topic length in arrays', async () => {
+    await expect(
+      parseLogFilter(
+        portal as any,
+        'https://portal',
+        { fromBlock: '0x1', toBlock: '0x1', topics: [['0x1234']] },
+        config
+      )
+    ).rejects.toThrow('invalid topic filter');
   });
 
   it('parses topic2 and topic3 filters', async () => {
@@ -194,16 +249,15 @@ describe('validation', () => {
     ).rejects.toThrow('invalid topics filter');
   });
 
-  it('rejects range too large', async () => {
+  it('parses range without enforcing limits', async () => {
     const limited = loadConfig({
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
       PORTAL_CHAIN_ID: '1',
       MAX_LOG_BLOCK_RANGE: '1'
     });
-    await expect(
-      parseLogFilter(portal as any, 'https://portal', { fromBlock: '0x1', toBlock: '0x2' }, limited)
-    ).rejects.toThrow('range too large');
+    const result = await parseLogFilter(portal as any, 'https://portal', { fromBlock: '0x1', toBlock: '0x2' }, limited);
+    expect(result.range).toBe(2);
   });
 
   it('rejects invalid address filter types', async () => {
@@ -212,6 +266,12 @@ describe('validation', () => {
     );
     await expect(
       parseLogFilter(portal as any, 'https://portal', { address: ['0x' + '11'.repeat(20), 1] } as any, config)
+    ).rejects.toThrow('invalid address filter');
+  });
+
+  it('rejects invalid address length in arrays', async () => {
+    await expect(
+      parseLogFilter(portal as any, 'https://portal', { address: ['0x1234'] } as any, config)
     ).rejects.toThrow('invalid address filter');
   });
 

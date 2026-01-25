@@ -7,6 +7,7 @@ import { RpcError, invalidParams, methodNotSupported, normalizeError } from '../
 import { convertBlockToRpc, convertLogToRpc, convertTraceToRpc, convertTxToRpc } from './conversion';
 import { assertArray, assertObject, parseBlockNumber, parseLogFilter, parseTransactionIndex } from './validation';
 import { metrics } from '../metrics';
+import { UpstreamRpcClient } from './upstream';
 
 export interface HandlerContext {
   config: Config;
@@ -16,6 +17,7 @@ export interface HandlerContext {
   requestId: string;
   logger?: { info: (obj: Record<string, unknown>, msg: string) => void; warn?: (obj: Record<string, unknown>, msg: string) => void };
   recordPortalHeaders?: (headers: { finalizedHeadNumber?: string; finalizedHeadHash?: string }) => void;
+  upstream?: UpstreamRpcClient;
 }
 
 export async function handleJsonRpc(
@@ -84,9 +86,15 @@ async function handleGetBlockByNumber(request: JsonRpcRequest, ctx: HandlerConte
   if (request.params.length < 1) {
     throw invalidParams('invalid params');
   }
+  if (request.params[0] === 'pending') {
+    return proxyUpstream(request, ctx, 'pending block not supported');
+  }
   const baseUrl = resolveBaseUrl(ctx);
   const blockTag = await parseBlockNumber(ctx.portal, baseUrl, request.params[0], ctx.config, ctx.traceparent);
-  await validateStartBlock(ctx, baseUrl, blockTag.number);
+  const startBlock = await getStartBlock(ctx, baseUrl);
+  if (startBlock !== undefined && blockTag.number < startBlock) {
+    return null;
+  }
 
   let fullTx = false;
   if (request.params.length > 1) {
@@ -119,9 +127,15 @@ async function handleGetTransactionByBlockNumberAndIndex(request: JsonRpcRequest
   if (request.params.length < 2) {
     throw invalidParams('invalid params');
   }
+  if (request.params[0] === 'pending') {
+    return proxyUpstream(request, ctx, 'pending block not supported');
+  }
   const baseUrl = resolveBaseUrl(ctx);
   const blockTag = await parseBlockNumber(ctx.portal, baseUrl, request.params[0], ctx.config, ctx.traceparent);
-  await validateStartBlock(ctx, baseUrl, blockTag.number);
+  const startBlock = await getStartBlock(ctx, baseUrl);
+  if (startBlock !== undefined && blockTag.number < startBlock) {
+    return null;
+  }
   const txIndex = parseTransactionIndex(request.params[1]);
 
   const portalReq = {
@@ -157,22 +171,38 @@ async function handleGetLogs(request: JsonRpcRequest, ctx: HandlerContext): Prom
 
   const baseUrl = resolveBaseUrl(ctx);
   const parsed = await parseLogFilter(ctx.portal, baseUrl, request.params[0], ctx.config, ctx.traceparent);
-  await validateStartBlock(ctx, baseUrl, parsed.fromBlock);
+  if ('blockHash' in parsed) {
+    return proxyUpstream(request, ctx, 'blockHash filter not supported');
+  }
+  const startBlock = await getStartBlock(ctx, baseUrl);
+  let { fromBlock, toBlock, useFinalized } = parsed;
+  if (startBlock !== undefined) {
+    if (toBlock < startBlock) {
+      return [];
+    }
+    if (fromBlock < startBlock) {
+      fromBlock = startBlock;
+    }
+  }
+  const range = toBlock - fromBlock + 1;
+  if (range > ctx.config.maxLogBlockRange) {
+    throw invalidParams(`range too large; max block range ${ctx.config.maxLogBlockRange}`);
+  }
   ctx.logger?.info(
-    { requestId: ctx.requestId, method: 'eth_getLogs', chainId: ctx.chainId, fromBlock: parsed.fromBlock, toBlock: parsed.toBlock },
+    { requestId: ctx.requestId, method: 'eth_getLogs', chainId: ctx.chainId, fromBlock, toBlock },
     'rpc log range'
   );
-  if (parsed.range > 10000) {
+  if (range > 10000) {
     ctx.logger?.warn?.(
-      { requestId: ctx.requestId, method: 'eth_getLogs', chainId: ctx.chainId, range: parsed.range },
+      { requestId: ctx.requestId, method: 'eth_getLogs', chainId: ctx.chainId, range },
       'large log range'
     );
   }
 
   const portalReq = {
     type: 'evm' as const,
-    fromBlock: parsed.fromBlock,
-    toBlock: parsed.toBlock,
+    fromBlock,
+    toBlock,
     fields: {
       block: { number: true, hash: true },
       log: allLogFieldsSelection()
@@ -180,7 +210,7 @@ async function handleGetLogs(request: JsonRpcRequest, ctx: HandlerContext): Prom
     logs: [parsed.logFilter]
   };
 
-  const blocks = await ctx.portal.streamBlocks(baseUrl, parsed.useFinalized, portalReq, ctx.traceparent, ctx.recordPortalHeaders);
+  const blocks = await ctx.portal.streamBlocks(baseUrl, useFinalized, portalReq, ctx.traceparent, ctx.recordPortalHeaders);
   const logs: Record<string, unknown>[] = [];
   for (const block of blocks) {
     for (const log of block.logs || []) {
@@ -195,9 +225,18 @@ async function handleTraceBlock(request: JsonRpcRequest, ctx: HandlerContext): P
   if (request.params.length < 1) {
     throw invalidParams('invalid params');
   }
+  if (request.params[0] === 'pending') {
+    return proxyUpstream(request, ctx, 'pending block not supported');
+  }
+  if (isBlockHashParam(request.params[0])) {
+    return proxyUpstream(request, ctx, 'blockHash not supported');
+  }
   const baseUrl = resolveBaseUrl(ctx);
   const blockTag = await parseBlockNumber(ctx.portal, baseUrl, request.params[0], ctx.config, ctx.traceparent);
-  await validateStartBlock(ctx, baseUrl, blockTag.number);
+  const startBlock = await getStartBlock(ctx, baseUrl);
+  if (startBlock !== undefined && blockTag.number < startBlock) {
+    return [];
+  }
 
   const portalReq = {
     type: 'evm' as const,
@@ -229,9 +268,18 @@ async function handleTraceBlock(request: JsonRpcRequest, ctx: HandlerContext): P
   return traces;
 }
 
-async function validateStartBlock(ctx: HandlerContext, baseUrl: string, fromBlock: number) {
+async function getStartBlock(ctx: HandlerContext, baseUrl: string): Promise<number | undefined> {
   const metadata = await ctx.portal.getMetadata(baseUrl, ctx.traceparent);
-  if (typeof metadata.start_block === 'number' && fromBlock < metadata.start_block) {
-    throw invalidParams('invalid params');
+  return typeof metadata.start_block === 'number' ? metadata.start_block : undefined;
+}
+
+function isBlockHashParam(value: unknown): value is string {
+  return typeof value === 'string' && /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
+function proxyUpstream(request: JsonRpcRequest, ctx: HandlerContext, message: string): Promise<unknown> {
+  if (!ctx.upstream) {
+    throw invalidParams(message);
   }
+  return ctx.upstream.call(request, ctx.chainId, ctx.traceparent);
 }

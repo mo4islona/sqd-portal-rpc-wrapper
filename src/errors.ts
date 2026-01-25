@@ -71,26 +71,12 @@ export function pendingBlockError(): RpcError {
   return invalidParams('pending block not found');
 }
 
-export function blockHashFilterError(): RpcError {
-  return invalidParams('blockHash filter not supported');
-}
-
 export function rangeTooLargeError(maxRange: number): RpcError {
-  return new RpcError({
-    message: `range too large; max block range ${maxRange}`,
-    code: -32012,
-    httpStatus: 400,
-    category: 'invalid_params'
-  });
+  return invalidParams(`range too large; max block range ${maxRange}`);
 }
 
 export function tooManyAddressesError(): RpcError {
-  return new RpcError({
-    message: 'specify less number of address',
-    code: -32012,
-    httpStatus: 400,
-    category: 'invalid_params'
-  });
+  return invalidParams('specify less number of address');
 }
 
 export function missingDataError(message = 'block not found'): RpcError {

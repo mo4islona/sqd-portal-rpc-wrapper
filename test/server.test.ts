@@ -88,6 +88,30 @@ describe('server', () => {
     await server.close();
   });
 
+  it('returns per-item errors for invalid batch entries', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify([
+        { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] },
+        { bad: true }
+      ])
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body).toHaveLength(2);
+    expect(body[1].error.code).toBe(-32600);
+    await server.close();
+  });
+
   it('returns rpc error when cause is RpcError', async () => {
     const config = loadConfig({
       SERVICE_MODE: 'single',
