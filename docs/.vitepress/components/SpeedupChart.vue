@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
 
 const props = defineProps<{
   labels: string[];
@@ -11,6 +11,7 @@ const isClient = ref(false);
 
 onMounted(async () => {
   isClient.value = true;
+  await nextTick();
   if (!canvas.value) return;
 
   const { Chart, registerables } = await import('chart.js');
