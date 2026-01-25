@@ -70,3 +70,4 @@ curl -s -X POST http://localhost:8080 \
 
 See the latest performance report and charts:
 - [Benchmarks](/benchmarks/)
+- [How to run benchmarks](/guide/benchmarking)
