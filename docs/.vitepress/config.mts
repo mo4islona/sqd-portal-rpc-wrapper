@@ -21,7 +21,7 @@ export default defineConfig({
         text: 'Links',
         items: [
           { text: 'GitHub', link: 'https://github.com/0x666c6f/sqd-portal-rpc-wrapper' },
-          { text: 'SQD Portal', link: 'https://docs.sqd.dev/' }
+          { text: 'SQD Portal', link: 'https://beta.docs.sqd.dev/en/home' }
         ]
       }
     ],
