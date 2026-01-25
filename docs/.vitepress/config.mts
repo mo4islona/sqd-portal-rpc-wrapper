@@ -1,0 +1,94 @@
+import { defineConfig } from 'vitepress';
+
+export default defineConfig({
+  title: 'SQD Portal RPC Wrapper',
+  description: 'JSON-RPC 2.0 wrapper for SQD Portal EVM datasets',
+  base: '/sqd-portal-rpc-wrapper/',
+
+  head: [
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/sqd-portal-rpc-wrapper/logo.svg' }]
+  ],
+
+  themeConfig: {
+    logo: '/logo.svg',
+
+    nav: [
+      { text: 'Guide', link: '/guide/getting-started' },
+      { text: 'API', link: '/api/' },
+      { text: 'Config', link: '/config/' },
+      {
+        text: 'Links',
+        items: [
+          { text: 'GitHub', link: 'https://github.com/0x666c6f/sqd-portal-rpc-wrapper' },
+          { text: 'SQD Portal', link: 'https://docs.sqd.dev/' }
+        ]
+      }
+    ],
+
+    sidebar: {
+      '/guide/': [
+        {
+          text: 'Introduction',
+          items: [
+            { text: 'Getting Started', link: '/guide/getting-started' },
+            { text: 'Architecture', link: '/guide/architecture' }
+          ]
+        },
+        {
+          text: 'Deployment',
+          items: [
+            { text: 'Docker', link: '/guide/docker' },
+            { text: 'Networks', link: '/guide/networks' }
+          ]
+        },
+        {
+          text: 'Development',
+          items: [
+            { text: 'Local Setup', link: '/guide/development' },
+            { text: 'Benchmarking', link: '/guide/benchmarking' }
+          ]
+        }
+      ],
+      '/api/': [
+        {
+          text: 'JSON-RPC API',
+          items: [
+            { text: 'Overview', link: '/api/' },
+            { text: 'Methods', link: '/api/methods' },
+            { text: 'Errors', link: '/api/errors' },
+            { text: 'Capabilities', link: '/api/capabilities' }
+          ]
+        }
+      ],
+      '/config/': [
+        {
+          text: 'Configuration',
+          items: [
+            { text: 'Overview', link: '/config/' },
+            { text: 'Portal Settings', link: '/config/portal' },
+            { text: 'Limits', link: '/config/limits' },
+            { text: 'Security', link: '/config/security' }
+          ]
+        }
+      ]
+    },
+
+    socialLinks: [
+      { icon: 'github', link: 'https://github.com/0x666c6f/sqd-portal-rpc-wrapper' }
+    ],
+
+    footer: {
+      message: 'Released under the MIT License.',
+      copyright: 'Copyright © 2026'
+    },
+
+    search: {
+      provider: 'local'
+    },
+
+    editLink: {
+      pattern: 'https://github.com/0x666c6f/sqd-portal-rpc-wrapper/edit/main/docs/:path',
+      text: 'Edit this page on GitHub'
+    }
+  }
+});

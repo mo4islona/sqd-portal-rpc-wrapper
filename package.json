@@ -13,7 +13,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "bench": "tsx scripts/bench.ts"
+    "bench": "tsx scripts/bench.ts",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "engines": {
     "node": ">=20.10.0"
@@ -30,6 +33,7 @@
     "eslint": "^8.57.0",
     "tsx": "^4.7.1",
     "typescript": "^5.4.5",
+    "vitepress": "^1.6.4",
     "vitest": "^1.6.0"
   }
 }

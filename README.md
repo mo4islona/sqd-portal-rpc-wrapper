@@ -14,18 +14,21 @@ Standalone HTTP JSON-RPC 2.0 wrapper for [SQD Portal](https://docs.sqd.dev/) EVM
 - **JSON-RPC 2.0 Compliant** — Full batch request support, proper error codes
 - **Supported Methods:**
   - `eth_chainId`, `eth_blockNumber`
-  - `eth_getBlockByNumber`, `eth_getBlockByHash`\*
-  - `eth_getTransactionByHash`\*, `eth_getTransactionReceipt`\*
+  - `eth_getBlockByNumber`
   - `eth_getTransactionByBlockNumberAndIndex`
   - `eth_getLogs`
-  - `trace_block`, `trace_transaction`\*
+  - `trace_block`
+  - Optional upstream-only methods when enabled:
+    `eth_getBlockByHash`, `eth_getTransactionByHash`,
+    `eth_getTransactionReceipt`, `trace_transaction`
 - **Flexible Deployment** — Single-chain and multi-chain modes
 - **Finalized Block Support** — Automatic fallback when finalized endpoints unavailable
 - **Observability** — Prometheus metrics, structured JSON logging, request tracing
 - **Production Ready** — Circuit breaker, concurrency limits, request timeouts
 - **Docker Support** — Dockerfile and docker-compose included
 
-\* *Requires upstream RPC fallback (`UPSTREAM_RPC_URL` or `UPSTREAM_RPC_URL_MAP`).*
+Enable upstream methods with `UPSTREAM_METHODS_ENABLED=true` and set
+`UPSTREAM_RPC_URL`/`UPSTREAM_RPC_URL_MAP`.
 
 ## Quickstart
 
@@ -100,11 +103,12 @@ npm run lint          # ESLint
 | `PORTAL_CIRCUIT_BREAKER_THRESHOLD` | `0` | Disable with 0; open circuit after N failures |
 | `PORTAL_CIRCUIT_BREAKER_RESET_MS` | `30000` | Circuit reset window |
 | `PORTAL_INCLUDE_ALL_BLOCKS` | `false` | Include empty blocks in portal stream |
-| `PORTAL_OPEN_ENDED_STREAM` | `false` | Omit `toBlock` when client omits it |
+| `PORTAL_OPEN_ENDED_STREAM` | `false` | Reserved for future streaming endpoints |
 | `WRAPPER_API_KEY` | | Optional incoming auth |
 | `WRAPPER_API_KEY_HEADER` | `X-API-Key` | |
 | `UPSTREAM_RPC_URL` | | Optional JSON-RPC fallback URL |
 | `UPSTREAM_RPC_URL_MAP` | | JSON object chainId->URL (overrides `UPSTREAM_RPC_URL`) |
+| `UPSTREAM_METHODS_ENABLED` | `false` | Advertise + allow upstream-only methods |
 | `MAX_LOG_BLOCK_RANGE` | `1000000` | |
 | `MAX_LOG_ADDRESSES` | `1000` | |
 | `MAX_BLOCK_NUMBER` | `2^53-1` | Uses safe integer for validation |
@@ -196,10 +200,12 @@ Override or extend with `PORTAL_DATASET_MAP`.
 
 ## Documentation
 
-- [API Reference](./docs/API.md)
-- [Configuration Guide](./docs/CONFIG.md)
-- [Design Document](./docs/DESIGN.md)
-- [Development Guide](./docs/DEVELOPMENT.md)
+Full documentation available at **[0x666c6f.github.io/sqd-portal-rpc-wrapper](https://0x666c6f.github.io/sqd-portal-rpc-wrapper/)**
+
+- [Getting Started](https://0x666c6f.github.io/sqd-portal-rpc-wrapper/guide/getting-started)
+- [API Reference](https://0x666c6f.github.io/sqd-portal-rpc-wrapper/api/)
+- [Configuration](https://0x666c6f.github.io/sqd-portal-rpc-wrapper/config/)
+- [Architecture](https://0x666c6f.github.io/sqd-portal-rpc-wrapper/guide/architecture)
 
 ## License
 
