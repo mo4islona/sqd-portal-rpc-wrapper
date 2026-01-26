@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/public/logo-256.png" alt="SQD Portal RPC Wrapper" width="128" height="128">
+</p>
+
 # SQD Portal RPC Wrapper
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)

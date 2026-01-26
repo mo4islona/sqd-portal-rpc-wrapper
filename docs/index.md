@@ -5,6 +5,9 @@ hero:
   name: SQD Portal RPC Wrapper
   text: JSON-RPC 2.0 for SQD Portal
   tagline: Translate Ethereum RPC calls into optimized Portal NDJSON streaming queries
+  image:
+    src: /logo-256.png
+    alt: SQD Portal RPC Wrapper
   actions:
     - theme: brand
       text: Get Started
