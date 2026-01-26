@@ -123,6 +123,60 @@ Highlights (Base mainnet, 10 iterations):
 
 See `/benchmarks/` for charts and raw data.
 
+## Performance Charts
+
+These charts reuse the same JS chart components as the benchmarks page.
+
+### Mean Latency by Method
+
+<LatencyChart
+  title="Mean Latency by Method"
+  :labels='["eth_blockNumber", "eth_getBlockByHash", "eth_getBlockByNumber (no tx)", "eth_getBlockByNumber (full tx)", "eth_getLogs", "eth_getTransactionByBlockNumberAndIndex", "eth_getTransactionByHash", "eth_getTransactionReceipt", "trace_block", "trace_transaction"]'
+  :wrapper-data="[37.24, 46.51, 95.58, 97.73, 51.79, 92.67, 42.39, 45.06, 239.98, 43.03]"
+  :rpc-data="[50.59, 43.79, 44.08, 59.2, 40.25, 42.74, 40.84, 42.3, 196.4, 39.3]"
+  y-axis-label="Mean Latency (ms)"
+/>
+
+### P95 Latency by Method
+
+<LatencyChart
+  title="P95 Latency by Method"
+  :labels='["eth_blockNumber", "eth_getBlockByHash", "eth_getBlockByNumber (no tx)", "eth_getBlockByNumber (full tx)", "eth_getLogs", "eth_getTransactionByBlockNumberAndIndex", "eth_getTransactionByHash", "eth_getTransactionReceipt", "trace_block", "trace_transaction"]'
+  :wrapper-data="[39.3, 62.81, 216.27, 146.16, 55.9, 147.85, 44.69, 49.22, 322.43, 52.55]"
+  :rpc-data="[64.21, 57.25, 48.48, 115.44, 44.15, 50.66, 54.94, 51.78, 245.01, 46.75]"
+  y-axis-label="P95 Latency (ms)"
+/>
+
+### Relative Performance (Speedup)
+
+<SpeedupChart
+  :labels='["eth_blockNumber", "eth_getBlockByHash", "eth_getBlockByNumber (no tx)", "eth_getBlockByNumber (full tx)", "eth_getLogs", "eth_getTransactionByBlockNumberAndIndex", "eth_getTransactionByHash", "eth_getTransactionReceipt", "trace_block", "trace_transaction"]'
+  :speedups="[1.36, 0.94, 0.46, 0.61, 0.78, 0.46, 0.96, 0.94, 0.82, 0.91]"
+/>
+
+### Batch Scaling
+
+<BatchChart
+  title="eth_blockNumber: Batch Size vs Latency"
+  :batch-sizes="[1, 5, 10, 25, 1000, 10000]"
+  :wrapper-data="[41.64, 38.32, 37.66, 36.75, 39.69, 56.28]"
+  :rpc-data="[41.44, 45.51, 48.6, 53.51, 229.68, 2324.54]"
+/>
+
+<BatchChart
+  title="eth_getBlockByNumber: Batch Size vs Latency"
+  :batch-sizes="[1, 5, 10, 25, 1000, 10000]"
+  :wrapper-data="[91.64, 83.82, 80.51, 90.55, 139.79, 438.53]"
+  :rpc-data="[43.35, 47.94, 54.4, 65.85, 276.57, 3402.79]"
+/>
+
+<BatchChart
+  title="eth_getLogs: Batch Size vs Latency"
+  :batch-sizes="[1, 5, 10, 25, 100, 100000]"
+  :wrapper-data="[55.87, 48.79, 46.98, 49.94, 57.66, 4083.11]"
+  :rpc-data="[41.15, 44.27, 55.51, 73.27, 79.2, 24428.35]"
+/>
+
 ## Observability
 
 Prometheus metrics:
