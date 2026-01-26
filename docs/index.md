@@ -79,3 +79,7 @@ See the latest performance report and charts:
 
 Grafana dashboard + metrics guide:
 - [Observability](/guide/observability)
+
+## Presentations
+
+- [Portal Team Deep Dive](/presentations/portal-team-deep-dive)

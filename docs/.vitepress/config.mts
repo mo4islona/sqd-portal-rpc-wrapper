@@ -21,6 +21,7 @@ export default withMermaid(
         { text: 'API', link: '/api/' },
         { text: 'Config', link: '/config/' },
         { text: 'Benchmarks', link: '/benchmarks/' },
+        { text: 'Presentations', link: '/presentations/' },
         {
           text: 'Links',
           items: [
@@ -82,6 +83,14 @@ export default withMermaid(
             text: 'Benchmarks',
             items: [
               { text: 'Overview', link: '/benchmarks/' }
+            ]
+          }
+        ],
+        '/presentations/': [
+          {
+            text: 'Presentations',
+            items: [
+              { text: 'Portal Team Deep Dive', link: '/presentations/portal-team-deep-dive' }
             ]
           }
         ]
