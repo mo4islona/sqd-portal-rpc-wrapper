@@ -16,6 +16,11 @@ describe('mapping', () => {
     expect(resolveDataset(1, config)).toBe('ethereum-mainnet');
   });
 
+  it('skips default datasets when disabled', () => {
+    const config = loadConfig({ SERVICE_MODE: 'multi', PORTAL_USE_DEFAULT_DATASETS: 'false' });
+    expect(resolveDataset(1, config)).toBeNull();
+  });
+
   it('returns null for unsupported chain', () => {
     const config = loadConfig({ SERVICE_MODE: 'multi' });
     expect(resolveDataset(999999, config)).toBeNull();

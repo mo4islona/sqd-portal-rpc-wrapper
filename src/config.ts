@@ -8,6 +8,7 @@ export interface Config {
   listenHost: string;
   listenPort: number;
   portalBaseUrl: string;
+  portalUseDefaultDatasets: boolean;
   portalApiKey?: string;
   portalApiKeyHeader: string;
   portalDataset?: string;
@@ -32,7 +33,6 @@ export interface Config {
   portalCircuitBreakerThreshold: number;
   portalCircuitBreakerResetMs: number;
   portalIncludeAllBlocks: boolean;
-  portalOpenEndedStream: boolean;
 }
 
 const DEFAULT_LISTEN = ':8080';
@@ -49,6 +49,7 @@ const DEFAULT_PORTAL_METADATA_TTL_MS = 300_000;
 const DEFAULT_HANDLER_TIMEOUT_MS = DEFAULT_HTTP_TIMEOUT_MS;
 const DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 0;
 const DEFAULT_CIRCUIT_BREAKER_RESET_MS = 30_000;
+const DEFAULT_PORTAL_USE_DEFAULT_DATASETS = true;
 
 export function loadConfig(env = process.env): Config {
   const serviceMode = (env.SERVICE_MODE || 'single').toLowerCase();
@@ -60,6 +61,7 @@ export function loadConfig(env = process.env): Config {
   const { host, port } = parseListenAddr(listenAddr);
 
   const portalBaseUrl = normalizePortalBaseUrl(env.PORTAL_BASE_URL || DEFAULT_PORTAL_BASE);
+  const portalUseDefaultDatasets = parseBoolean(env.PORTAL_USE_DEFAULT_DATASETS, DEFAULT_PORTAL_USE_DEFAULT_DATASETS);
   const portalApiKey = env.PORTAL_API_KEY;
   const portalApiKeyHeader = env.PORTAL_API_KEY_HEADER || 'X-API-Key';
   const portalDataset = env.PORTAL_DATASET;
@@ -98,7 +100,6 @@ export function loadConfig(env = process.env): Config {
     DEFAULT_CIRCUIT_BREAKER_RESET_MS
   );
   const portalIncludeAllBlocks = parseBoolean(env.PORTAL_INCLUDE_ALL_BLOCKS, false);
-  const portalOpenEndedStream = parseBoolean(env.PORTAL_OPEN_ENDED_STREAM, false);
 
   if (serviceMode === 'single') {
     if (!portalDataset && Object.keys(portalDatasetMap).length === 0) {
@@ -114,6 +115,7 @@ export function loadConfig(env = process.env): Config {
     listenHost: host,
     listenPort: port,
     portalBaseUrl,
+    portalUseDefaultDatasets,
     portalApiKey,
     portalApiKeyHeader,
     portalDataset,
@@ -137,8 +139,7 @@ export function loadConfig(env = process.env): Config {
     handlerTimeoutMs,
     portalCircuitBreakerThreshold,
     portalCircuitBreakerResetMs,
-    portalIncludeAllBlocks,
-    portalOpenEndedStream
+    portalIncludeAllBlocks
   };
 }
 

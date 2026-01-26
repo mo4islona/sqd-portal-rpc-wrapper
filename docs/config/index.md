@@ -11,6 +11,7 @@ All configuration is done via environment variables.
 | `PORTAL_BASE_URL` | `https://portal.sqd.dev/datasets` | Portal base URL |
 | `PORTAL_DATASET` | — | Single-chain dataset |
 | `PORTAL_DATASET_MAP` | — | Multi-chain dataset map |
+| `PORTAL_USE_DEFAULT_DATASETS` | `true` | Include built-in dataset mappings |
 | `PORTAL_CHAIN_ID` | — | Single-chain chain ID |
 | `PORTAL_API_KEY` | — | Portal authentication |
 | `UPSTREAM_RPC_URL` | — | Optional upstream RPC |
@@ -48,6 +49,8 @@ PORTAL_CHAIN_ID=1
 SERVICE_MODE=multi
 PORTAL_DATASET_MAP='{"1":"ethereum-mainnet","8453":"base-mainnet"}'
 ```
+
+Set `PORTAL_USE_DEFAULT_DATASETS=false` to use only the explicit map.
 
 ## Minimal Configurations
 

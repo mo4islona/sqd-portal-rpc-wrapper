@@ -39,6 +39,16 @@ JSON object mapping chain IDs to dataset names.
 PORTAL_DATASET_MAP='{"1":"ethereum-mainnet","8453":"base-mainnet","42161":"arbitrum-one"}'
 ```
 
+### PORTAL_USE_DEFAULT_DATASETS
+
+Include built-in dataset mappings in multi-chain mode.
+
+**Default:** `true`
+
+```bash
+PORTAL_USE_DEFAULT_DATASETS=false
+```
+
 ### PORTAL_CHAIN_ID
 
 Chain ID for single-chain mode. Required if `PORTAL_DATASET_MAP` has multiple entries.
@@ -127,16 +137,6 @@ Include empty blocks in Portal stream responses.
 
 ```bash
 PORTAL_INCLUDE_ALL_BLOCKS=true
-```
-
-### PORTAL_OPEN_ENDED_STREAM
-
-Reserved for future streaming endpoints. JSON-RPC responses remain bounded.
-
-**Default:** `false`
-
-```bash
-PORTAL_OPEN_ENDED_STREAM=true
 ```
 
 ## Upstream RPC Fallback

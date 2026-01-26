@@ -297,7 +297,7 @@ describe('validation', () => {
     );
     if ('useFinalized' in result) {
       expect(result.useFinalized).toBe(false);
-      expect(result.toBlockDefaulted).toBe(true);
+      expect(result.toBlock).toBe(10);
     } else {
       throw new Error('expected range filter');
     }

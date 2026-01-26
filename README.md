@@ -95,6 +95,7 @@ npm run lint          # ESLint
 | `PORTAL_BASE_URL` | `https://portal.sqd.dev/datasets` | Dataset root |
 | `PORTAL_DATASET` | | Single-chain dataset override |
 | `PORTAL_DATASET_MAP` | | JSON object chainId->dataset |
+| `PORTAL_USE_DEFAULT_DATASETS` | `true` | Include built-in dataset mappings in multi-chain mode |
 | `PORTAL_CHAIN_ID` | | Required for single-chain if map not single-entry |
 | `PORTAL_API_KEY` | | Optional portal key |
 | `PORTAL_API_KEY_HEADER` | `X-API-Key` | |
@@ -103,7 +104,6 @@ npm run lint          # ESLint
 | `PORTAL_CIRCUIT_BREAKER_THRESHOLD` | `0` | Disable with 0; open circuit after N failures |
 | `PORTAL_CIRCUIT_BREAKER_RESET_MS` | `30000` | Circuit reset window |
 | `PORTAL_INCLUDE_ALL_BLOCKS` | `false` | Include empty blocks in portal stream |
-| `PORTAL_OPEN_ENDED_STREAM` | `false` | Reserved for future streaming endpoints |
 | `WRAPPER_API_KEY` | | Optional incoming auth |
 | `WRAPPER_API_KEY_HEADER` | `X-API-Key` | |
 | `UPSTREAM_RPC_URL` | | Optional JSON-RPC fallback URL |
@@ -154,7 +154,7 @@ All metrics are exposed at `GET /metrics` in Prometheus format.
 | `requests_total` | `method`, `chainId`, `status` | Total JSON-RPC requests |
 | `rpc_duration_seconds` | `method` | JSON-RPC handler duration |
 | `rpc_timeouts_total` | `method` | JSON-RPC handler timeouts |
-| `batch_requests_total` | `count` | Batch requests by size |
+| `batch_requests_total` | `count` | Batch requests by size bucket |
 | `batch_items_total` | `status` | Batch items processed |
 | `portal_requests_total` | `endpoint`, `status` | Portal HTTP requests |
 | `portal_latency_seconds` | `endpoint` | Portal request latency histogram |
@@ -197,7 +197,7 @@ Built-in chain ID to dataset mappings:
 | Arbitrum Sepolia | 421614 | `arbitrum-sepolia` |
 | Optimism Sepolia | 11155420 | `optimism-sepolia` |
 
-Override or extend with `PORTAL_DATASET_MAP`.
+Override or extend with `PORTAL_DATASET_MAP`. Set `PORTAL_USE_DEFAULT_DATASETS=false` to use only explicit mappings.
 
 ## Security
 

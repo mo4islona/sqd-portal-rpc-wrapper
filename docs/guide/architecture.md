@@ -132,7 +132,7 @@ When open, requests fail fast with 503 instead of waiting for Portal timeouts.
 - `requests_total{method,chainId,status}` - JSON-RPC requests
 - `rpc_duration_seconds{method}` - JSON-RPC handler duration
 - `rpc_timeouts_total{method}` - JSON-RPC handler timeouts
-- `batch_requests_total{count}` - Batch requests by size
+- `batch_requests_total{count}` - Batch requests by size bucket
 - `batch_items_total{status}` - Batch items processed
 - `portal_requests_total{endpoint,status}` - Portal HTTP requests
 - `portal_latency_seconds{endpoint}` - Portal latency histogram

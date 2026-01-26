@@ -1,6 +1,6 @@
 # Supported Networks
 
-The wrapper includes built-in chain ID to dataset mappings for popular EVM networks.
+The wrapper includes built-in chain ID to dataset mappings for popular EVM networks. Set `PORTAL_USE_DEFAULT_DATASETS=false` to disable built-ins and use only `PORTAL_DATASET_MAP`.
 
 ## Built-in Networks
 

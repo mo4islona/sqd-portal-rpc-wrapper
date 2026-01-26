@@ -195,7 +195,7 @@ async function handleRpcRequest(
     const payload = req.body;
     const parsed = parseJsonRpcPayload(payload);
     if (parsed.isBatch) {
-      metrics.batch_requests_total.labels(String(parsed.items.length)).inc();
+      metrics.batch_requests_total.labels(batchSizeBucket(parsed.items.length)).inc();
     }
     const requestCache = new Map<string, Promise<unknown>>();
     const startBlockCache = new Map<string, Promise<number | undefined>>();
@@ -381,6 +381,16 @@ function toCategory(code: number): string {
   }
 }
 
+function batchSizeBucket(size: number): string {
+  if (size <= 1) return '1';
+  if (size <= 5) return '2-5';
+  if (size <= 10) return '6-10';
+  if (size <= 20) return '11-20';
+  if (size <= 50) return '21-50';
+  if (size <= 100) return '51-100';
+  return '101+';
+}
+
 function timingSafeCompare(left: string, right: string): boolean {
   const leftBuf = Buffer.from(left);
   const rightBuf = Buffer.from(right);
@@ -397,7 +407,8 @@ export const __test__ = {
   extractSingleChainIdFromMap,
   normalizeHeaderValue,
   classifyGunzipError,
-  timingSafeCompare
+  timingSafeCompare,
+  batchSizeBucket
 };
 
 const JSON_RPC_BASE_METHODS = [
@@ -536,7 +547,10 @@ function resolveChainDatasets(config: Config): Record<string, string> {
     }
     return { [String(chainId)]: dataset };
   }
-  return { ...defaultDatasetMap(), ...config.portalDatasetMap };
+  if (config.portalUseDefaultDatasets) {
+    return { ...defaultDatasetMap(), ...config.portalDatasetMap };
+  }
+  return { ...config.portalDatasetMap };
 }
 
 function resolveRealtimeEnabled(metadata: { real_time?: boolean } | null, mode: Config['portalRealtimeMode']): boolean {

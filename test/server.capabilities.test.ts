@@ -425,6 +425,47 @@ describe('capabilities endpoint', () => {
     vi.unmock('../src/portal/mapping');
   });
 
+  it('skips default dataset map when disabled', async () => {
+    vi.resetModules();
+    vi.doMock('../src/portal/client', () => {
+      class PortalClient {
+        constructor(_config: unknown) {}
+        buildDatasetBaseUrl(dataset: string) {
+          return `https://portal/${dataset}`;
+        }
+        async getMetadata() {
+          return { dataset: 'unused', real_time: false };
+        }
+      }
+      return {
+        PortalClient,
+        normalizePortalBaseUrl: (value: string) => value
+      };
+    });
+    vi.doMock('../src/portal/mapping', async () => {
+      const actual = await vi.importActual<typeof import('../src/portal/mapping')>('../src/portal/mapping');
+      return { ...actual, defaultDatasetMap: () => ({ '1': 'ethereum-mainnet' }) };
+    });
+
+    const { buildServer } = await import('../src/server');
+    const config = loadConfig({
+      SERVICE_MODE: 'multi',
+      PORTAL_USE_DEFAULT_DATASETS: 'false',
+      PORTAL_DATASET_MAP: JSON.stringify({ '10': 'optimism' })
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({ method: 'GET', url: '/capabilities' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.chains['1']).toBeUndefined();
+    expect(body.chains['10'].dataset).toBe('optimism');
+    await server.close();
+
+    vi.resetModules();
+    vi.unmock('../src/portal/client');
+    vi.unmock('../src/portal/mapping');
+  });
+
   it('uses dataset placeholder endpoints and npm package version', async () => {
     vi.resetModules();
     const prevVersion = process.env.npm_package_version;

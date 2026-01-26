@@ -508,12 +508,11 @@ describe('handlers', () => {
     expect(response!.result).toEqual([]);
   });
 
-  it('keeps bounded toBlock even when open-ended stream enabled', async () => {
+  it('keeps bounded toBlock when toBlock omitted', async () => {
     const configOpen = loadConfig({
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
       PORTAL_CHAIN_ID: '1',
-      PORTAL_OPEN_ENDED_STREAM: 'true',
       PORTAL_INCLUDE_ALL_BLOCKS: 'true'
     });
     let seen: Record<string, unknown> | null = null;
@@ -958,6 +957,33 @@ describe('handlers', () => {
       { jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] },
       { config, portal: slowPortal as any, chainId: 1, requestId: 'test', requestTimeoutMs: 1 }
     );
+    expect(httpStatus).toBe(504);
+    expect(response.error?.code).toBe(-32000);
+  });
+
+  it('labels timeout as unknown when method becomes empty', async () => {
+    const slowPortal = {
+      ...portal,
+      fetchHead: async () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve({ head: { number: 5, hash: '0xabc' }, finalizedAvailable: false }), 50);
+        })
+    };
+    const request: any = { jsonrpc: '2.0', id: 1, params: [] };
+    let reads = 0;
+    Object.defineProperty(request, 'method', {
+      get() {
+        reads += 1;
+        return reads === 1 ? 'eth_blockNumber' : '';
+      }
+    });
+    const { response, httpStatus } = await handleJsonRpc(request, {
+      config,
+      portal: slowPortal as any,
+      chainId: 1,
+      requestId: 'test',
+      requestTimeoutMs: 1
+    });
     expect(httpStatus).toBe(504);
     expect(response.error?.code).toBe(-32000);
   });

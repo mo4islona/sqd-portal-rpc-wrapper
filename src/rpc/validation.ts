@@ -100,7 +100,6 @@ export type ParsedLogFilter =
   | {
       fromBlock: number;
       toBlock: number;
-      toBlockDefaulted: boolean;
       useFinalized: boolean;
       range: number;
       logFilter: {
@@ -146,9 +145,7 @@ export async function parseLogFilter(
     if (filter.toBlock !== undefined) {
       toBlock = await parseBlockNumber(portal, baseUrl, filter.toBlock, config, traceparent, requestId);
     }
-    let toBlockDefaulted = false;
     if (!toBlock) {
-      toBlockDefaulted = true;
       if (fromBlock?.useFinalized) {
         const { head } = await portal.fetchHead(baseUrl, false, traceparent, requestId);
         toBlock = { number: head.number, useFinalized: false };
@@ -171,7 +168,6 @@ export async function parseLogFilter(
     return {
       fromBlock: fromBlock.number,
       toBlock: toBlock.number,
-      toBlockDefaulted,
       useFinalized,
       range: blockRange,
       logFilter

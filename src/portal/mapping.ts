@@ -30,7 +30,7 @@ export function resolveDataset(chainId: number, config: Config): string | null {
   if (config.portalDatasetMap[key]) {
     return config.portalDatasetMap[key];
   }
-  if (defaultChainToDataset[key]) {
+  if (config.portalUseDefaultDatasets && defaultChainToDataset[key]) {
     return defaultChainToDataset[key];
   }
   return null;

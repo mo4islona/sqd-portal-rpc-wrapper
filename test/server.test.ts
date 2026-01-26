@@ -19,6 +19,21 @@ describe('server', () => {
     expect(serverTest.extractChainId(['bad'])).toBeNull();
   });
 
+  it('buckets batch sizes', () => {
+    expect(serverTest.batchSizeBucket(1)).toBe('1');
+    expect(serverTest.batchSizeBucket(2)).toBe('2-5');
+    expect(serverTest.batchSizeBucket(5)).toBe('2-5');
+    expect(serverTest.batchSizeBucket(6)).toBe('6-10');
+    expect(serverTest.batchSizeBucket(10)).toBe('6-10');
+    expect(serverTest.batchSizeBucket(11)).toBe('11-20');
+    expect(serverTest.batchSizeBucket(20)).toBe('11-20');
+    expect(serverTest.batchSizeBucket(21)).toBe('21-50');
+    expect(serverTest.batchSizeBucket(50)).toBe('21-50');
+    expect(serverTest.batchSizeBucket(51)).toBe('51-100');
+    expect(serverTest.batchSizeBucket(100)).toBe('51-100');
+    expect(serverTest.batchSizeBucket(101)).toBe('101+');
+  });
+
   it('normalizes header values', () => {
     expect(serverTest.normalizeHeaderValue('secret')).toBe('secret');
     expect(serverTest.normalizeHeaderValue(['secret'])).toBe('secret');
