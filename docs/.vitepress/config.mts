@@ -21,7 +21,7 @@ export default withMermaid(
         { text: 'API', link: '/api/' },
         { text: 'Config', link: '/config/' },
         { text: 'Benchmarks', link: '/benchmarks/' },
-        { text: 'Presentations', link: '/presentations/' },
+        { text: 'Deep Dive', link: '/presentations/deep-dive' },
         {
           text: 'Links',
           items: [
@@ -88,7 +88,7 @@ export default withMermaid(
         ],
         '/presentations/': [
           {
-            text: 'Presentations',
+            text: 'Deep Dive',
             items: [
               { text: 'Deep Dive', link: '/presentations/deep-dive' }
             ]

@@ -80,6 +80,6 @@ See the latest performance report and charts:
 Grafana dashboard + metrics guide:
 - [Observability](/guide/observability)
 
-## Presentations
+## Deep Dive
 
 - [Deep Dive](/presentations/deep-dive)
