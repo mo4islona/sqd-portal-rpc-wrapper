@@ -105,6 +105,44 @@ describe('capabilities endpoint', () => {
     vi.unmock('../src/portal/mapping');
   });
 
+  it('advertises upstream methods when url map provided', async () => {
+    vi.resetModules();
+    vi.doMock('../src/portal/client', () => {
+      class PortalClient {
+        constructor(_config: unknown) {}
+        buildDatasetBaseUrl(dataset: string) {
+          return `https://portal/${dataset}`;
+        }
+        async getMetadata() {
+          return { dataset: 'ethereum-mainnet', start_block: 0, real_time: true };
+        }
+      }
+      return { PortalClient, normalizePortalBaseUrl: (value: string) => value };
+    });
+    vi.doMock('../src/portal/mapping', async () => {
+      const actual = await vi.importActual<typeof import('../src/portal/mapping')>('../src/portal/mapping');
+      return { ...actual, defaultDatasetMap: () => ({ '1': 'ethereum-mainnet' }) };
+    });
+
+    const { buildServer } = await import('../src/server');
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      UPSTREAM_METHODS_ENABLED: 'true',
+      UPSTREAM_RPC_URL_MAP: JSON.stringify({ '1': 'https://upstream.rpc' })
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({ method: 'GET', url: '/capabilities' });
+    const methods = res.json().methods as string[];
+    expect(methods).toContain('eth_getBlockByHash');
+    await server.close();
+
+    vi.resetModules();
+    vi.unmock('../src/portal/client');
+    vi.unmock('../src/portal/mapping');
+  });
+
   it('passes finalized head headers from stream', async () => {
     vi.resetModules();
     vi.doMock('../src/portal/client', () => {
@@ -593,6 +631,45 @@ describe('capabilities endpoint', () => {
     const server = await buildServer(config);
     expect(calls).toBe(1);
     await server.close();
+    process.env.NODE_ENV = prevEnv;
+
+    vi.resetModules();
+    vi.unmock('../src/portal/client');
+    vi.unmock('../src/portal/mapping');
+  });
+
+  it('throws when prefetch metadata fails and realtime required', async () => {
+    vi.resetModules();
+    const prevEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    vi.doMock('../src/portal/client', () => {
+      class PortalClient {
+        constructor(_config: unknown) {}
+        buildDatasetBaseUrl(dataset: string) {
+          return `https://portal/${dataset}`;
+        }
+        async getMetadata() {
+          throw new Error('boom');
+        }
+      }
+      return {
+        PortalClient,
+        normalizePortalBaseUrl: (value: string) => value
+      };
+    });
+    vi.doMock('../src/portal/mapping', async () => {
+      const actual = await vi.importActual<typeof import('../src/portal/mapping')>('../src/portal/mapping');
+      return { ...actual, defaultDatasetMap: () => ({ '1': 'ethereum-mainnet' }) };
+    });
+
+    const { buildServer } = await import('../src/server');
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      PORTAL_REALTIME_MODE: 'required'
+    });
+    await expect(buildServer(config)).rejects.toThrow('boom');
     process.env.NODE_ENV = prevEnv;
 
     vi.resetModules();

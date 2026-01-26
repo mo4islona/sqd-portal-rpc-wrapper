@@ -8,11 +8,13 @@ export default withMermaid(
     base: '/sqd-portal-rpc-wrapper/',
 
     head: [
-      ['link', { rel: 'icon', type: 'image/svg+xml', href: '/sqd-portal-rpc-wrapper/logo.svg' }]
+      ['link', { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/sqd-portal-rpc-wrapper/favicon-32.png' }],
+      ['link', { rel: 'icon', type: 'image/png', sizes: '128x128', href: '/sqd-portal-rpc-wrapper/logo-128.png' }],
+      ['link', { rel: 'apple-touch-icon', href: '/sqd-portal-rpc-wrapper/logo-256.png' }]
     ],
 
     themeConfig: {
-      logo: '/logo.svg',
+      logo: '/logo.png',
 
       nav: [
         { text: 'Guide', link: '/guide/getting-started' },

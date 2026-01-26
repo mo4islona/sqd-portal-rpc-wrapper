@@ -184,6 +184,145 @@ describe('PortalClient', () => {
     expect(blocks).toHaveLength(0);
   });
 
+  it('keeps request fields when unsupported field does not match', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    let seenFields: unknown;
+    const fetchImpl = vi.fn().mockImplementation((_input: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      seenFields = body.fields;
+      const ndjson = '{"header":{"number":1}}\n';
+      return streamResponse(ndjson, 200);
+    });
+    const client = new PortalClient(cfg, { fetchImpl });
+    const baseUrl = 'https://portal.sqd.dev/datasets/ethereum-mainnet';
+    (client as any).unsupportedFieldsByBaseUrl.set(baseUrl, new Set(['not-a-field']));
+    await client.streamBlocks(baseUrl, false, {
+      type: 'evm',
+      fromBlock: 1,
+      toBlock: 1,
+      fields: { block: { number: true } }
+    });
+    expect(seenFields).toEqual({ block: { number: true } });
+  });
+
+  it('throws on metadata fetch non-200', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = async () => new Response('boom', { status: 500 });
+    const client = new PortalClient(cfg, { fetchImpl });
+    await expect(client.getMetadata('https://portal.sqd.dev/datasets/ethereum-mainnet')).rejects.toThrow('server error');
+  });
+
+  it('skips refresh when metadata refresh already in flight', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      PORTAL_METADATA_TTL_MS: '0'
+    });
+    const fetchImpl = async () => new Response(JSON.stringify({ dataset: 'ethereum-mainnet', real_time: true }), { status: 200 });
+    const client = new PortalClient(cfg, { fetchImpl });
+    const baseUrl = 'https://portal.sqd.dev/datasets/ethereum-mainnet';
+    (client as any).metadataCache.set(baseUrl, { data: { dataset: 'ethereum-mainnet', real_time: true }, fetchedAt: 0 });
+    (client as any).metadataRefreshInFlight.set(baseUrl, Promise.resolve());
+    const data = await client.getMetadata(baseUrl);
+    expect(data.dataset).toBe('ethereum-mainnet');
+  });
+
+  it('refreshes metadata cache when stale', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      PORTAL_METADATA_TTL_MS: '0'
+    });
+    const fetchImpl = async () =>
+      new Response(JSON.stringify({ dataset: 'ethereum-mainnet', aliases: ['eth'], real_time: true }), { status: 200 });
+    const client = new PortalClient(cfg, { fetchImpl });
+    const baseUrl = 'https://portal.sqd.dev/datasets/ethereum-mainnet';
+    (client as any).metadataCache.set(baseUrl, { data: { dataset: 'ethereum-mainnet', real_time: false }, fetchedAt: 0 });
+    await client.getMetadata(baseUrl);
+    const refresh = (client as any).metadataRefreshInFlight.get(baseUrl) as Promise<void>;
+    await refresh;
+    const cached = (client as any).metadataCache.get(baseUrl);
+    expect(cached.data.real_time).toBe(true);
+  });
+
+  it('resets circuit breaker after success when enabled', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      PORTAL_CIRCUIT_BREAKER_THRESHOLD: '1'
+    });
+    const fetchImpl = async () => new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
+    const client = new PortalClient(cfg, { fetchImpl });
+    await client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false);
+    expect((client as any).breakerFailures).toBe(0);
+    expect((client as any).breakerOpenUntil).toBe(0);
+  });
+
+  it('fails after repeated negotiable field errors', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = vi.fn().mockImplementation(
+      () => new Response('unknown field `authorizationList`', { status: 400 })
+    );
+    const client = new PortalClient(cfg, { fetchImpl });
+    await expect(
+      client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, {
+        type: 'evm',
+        fromBlock: 1,
+        toBlock: 1,
+        fields: { transaction: { authorizationList: true } }
+      })
+    ).rejects.toThrow('portal field negotiation failed');
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
+  });
+
+  it('keeps log/trace/stateDiff fields when unsupported field does not match', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    let seenFields: unknown;
+    const fetchImpl = vi.fn().mockImplementation((_input: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      seenFields = body.fields;
+      const ndjson = '{"header":{"number":1}}\n';
+      return streamResponse(ndjson, 200);
+    });
+    const client = new PortalClient(cfg, { fetchImpl });
+    const baseUrl = 'https://portal.sqd.dev/datasets/ethereum-mainnet';
+    (client as any).unsupportedFieldsByBaseUrl.set(baseUrl, new Set(['not-a-field']));
+    await client.streamBlocks(baseUrl, false, {
+      type: 'evm',
+      fromBlock: 1,
+      toBlock: 1,
+      fields: {
+        log: { address: true },
+        trace: { action: true },
+        stateDiff: { key: true }
+      }
+    });
+    expect(seenFields).toEqual({
+      log: { address: true },
+      trace: { action: true },
+      stateDiff: { key: true }
+    });
+  });
+
   it('maps rate limit errors', async () => {
     const cfg = loadConfig({
       SERVICE_MODE: 'single',
