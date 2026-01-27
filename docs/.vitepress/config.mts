@@ -21,7 +21,6 @@ export default withMermaid(
         { text: 'API', link: '/api/' },
         { text: 'Config', link: '/config/' },
         { text: 'Benchmarks', link: '/benchmarks/' },
-        { text: 'Deep Dive', link: '/presentations/deep-dive' },
         {
           text: 'Links',
           items: [
