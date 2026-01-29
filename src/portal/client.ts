@@ -1,27 +1,36 @@
+import { performance } from 'node:perf_hooks';
+import { PortalClient as OfficialPortalClient, isForkException } from '@subsquid/portal-client';
+import { HttpClient, HttpError } from '@subsquid/http-client';
 import { Config } from '../config';
 import { metrics } from '../metrics';
 import {
-  normalizeError,
-  rateLimitError,
-  unauthorizedError,
   conflictError,
-  unavailableError,
-  missingDataError,
   invalidParams,
+  missingDataError,
+  normalizeError,
   portalUnsupportedFieldError,
-  serverError
+  rateLimitError,
+  serverError,
+  unauthorizedError,
+  unavailableError
 } from '../errors';
 import { PortalHeadResponse, PortalMetadataResponse, PortalRequest, PortalBlockResponse } from './types';
-import { parseNdjsonStream } from './ndjson';
+import { errorBodyText, FetchHttpClient, httpStatusFromError } from './http';
+import {
+  collectStream,
+  ensureStreamSegment,
+  filterBlocksInRange,
+  lastBlockNumber,
+  PortalStreamHeaders
+} from './stream';
+import { applyUnsupportedFields, extractUnknownField, isNegotiableField } from './fields';
+
+export type { PortalStreamHeaders } from './stream';
 
 export interface PortalClientOptions {
   fetchImpl?: typeof fetch;
+  httpClient?: HttpClient;
   logger?: { info: (obj: Record<string, unknown>, msg: string) => void; warn?: (obj: Record<string, unknown>, msg: string) => void };
-}
-
-export interface PortalStreamHeaders {
-  finalizedHeadNumber?: string;
-  finalizedHeadHash?: string;
 }
 
 export class PortalClient {
@@ -30,13 +39,13 @@ export class PortalClient {
   private readonly apiKeyHeader: string;
   private readonly timeoutMs: number;
   private readonly metadataTtlMs: number;
-  private readonly maxNdjsonLineBytes: number;
-  private readonly maxNdjsonBytes: number;
-  private readonly fetchImpl: typeof fetch;
+  private readonly maxStreamBytes: number;
+  private readonly httpClient: HttpClient;
   private readonly logger?: PortalClientOptions['logger'];
   private readonly metadataCache = new Map<string, { data: PortalMetadataResponse; fetchedAt: number }>();
   private readonly metadataRefreshInFlight = new Map<string, Promise<void>>();
   private readonly unsupportedFieldsByBaseUrl = new Map<string, Set<string>>();
+  private readonly clientsByBaseUrl = new Map<string, OfficialPortalClient>();
   private readonly breakerThreshold: number;
   private readonly breakerResetMs: number;
   private breakerFailures = 0;
@@ -49,12 +58,17 @@ export class PortalClient {
     this.apiKeyHeader = config.portalApiKeyHeader;
     this.timeoutMs = config.httpTimeoutMs;
     this.metadataTtlMs = config.portalMetadataTtlMs;
-    this.maxNdjsonLineBytes = config.maxNdjsonLineBytes;
-    this.maxNdjsonBytes = config.maxNdjsonBytes;
-    this.fetchImpl = options.fetchImpl || fetch;
+    this.maxStreamBytes = config.maxNdjsonBytes;
     this.logger = options.logger;
     this.breakerThreshold = config.portalCircuitBreakerThreshold;
     this.breakerResetMs = config.portalCircuitBreakerResetMs;
+    if (options.httpClient) {
+      this.httpClient = options.httpClient;
+    } else if (options.fetchImpl) {
+      this.httpClient = new FetchHttpClient(options.fetchImpl);
+    } else {
+      this.httpClient = new HttpClient({ httpTimeout: this.timeoutMs });
+    }
   }
 
   async fetchHead(
@@ -63,21 +77,42 @@ export class PortalClient {
     traceparent?: string,
     requestId?: string
   ): Promise<{ head: PortalHeadResponse; finalizedAvailable: boolean }> {
-    const url = `${baseUrl}/${finalized ? 'finalized-head' : 'head'}`;
-    const resp = await this.request(url, 'GET', 'application/json', undefined, traceparent, requestId);
-
-    if (resp.status === 404 && finalized) {
-      metrics.finalized_fallback_total.inc();
-      this.logger?.warn?.({ endpoint: 'finalized-head', status: 404 }, 'finalized head not found, fallback to non-finalized');
-      return this.fetchHead(baseUrl, false, traceparent, requestId);
+    if (this.isBreakerOpen()) {
+      this.logger?.warn?.({ endpoint: finalized ? 'finalized-head' : 'head' }, 'portal circuit open');
+      throw unavailableError('portal circuit open');
     }
+    const client = this.getPortalClient(baseUrl);
+    const headers = this.requestHeaders(traceparent, requestId);
+    const endpoint = finalized ? 'finalized-head' : 'head';
+    const started = performance.now();
 
-    if (resp.status !== 200) {
-      throw mapPortalStatusError(resp.status, await readBody(resp));
+    try {
+      const head = finalized
+        ? await client.getFinalizedHead({ headers })
+        : await client.getHead({ headers });
+      recordPortalMetrics(endpoint, 200, started);
+      this.recordBreaker(200);
+      if (!head) {
+        throw missingDataError('block not found');
+      }
+      this.logger?.info?.({ endpoint, status: 200 }, 'portal response');
+      return { head, finalizedAvailable: finalized };
+    } catch (err) {
+      const status = httpStatusFromError(err);
+      if (status) {
+        recordPortalMetrics(endpoint, status, started);
+        this.recordBreaker(status);
+      } else {
+        this.recordBreaker(0);
+      }
+      if (finalized && status === 404) {
+        metrics.finalized_fallback_total.inc();
+        this.logger?.warn?.({ endpoint, status }, 'finalized head not found, fallback to non-finalized');
+        return this.fetchHead(baseUrl, false, traceparent, requestId);
+      }
+      this.logger?.warn?.({ endpoint, error: err instanceof Error ? err.message : String(err) }, 'portal error');
+      throw mapPortalError(err);
     }
-
-    const body = (await resp.json()) as PortalHeadResponse;
-    return { head: body, finalizedAvailable: finalized };
   }
 
   async streamBlocks(
@@ -88,150 +123,86 @@ export class PortalClient {
     onHeaders?: (headers: PortalStreamHeaders) => void,
     requestId?: string
   ): Promise<PortalBlockResponse[]> {
-    const url = `${baseUrl}/${finalized ? 'finalized-stream' : 'stream'}`;
+    if (this.isBreakerOpen()) {
+      this.logger?.warn?.({ endpoint: finalized ? 'finalized-stream' : 'stream' }, 'portal circuit open');
+      throw unavailableError('portal circuit open');
+    }
+    const client = this.getPortalClient(baseUrl);
+    const headers = this.requestHeaders(traceparent, requestId);
     const unsupportedFields = this.getUnsupportedFields(baseUrl);
     let effectiveRequest = applyUnsupportedFields(request, unsupportedFields);
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const resp = await this.request(
-        url,
-        'POST',
-        'application/x-ndjson',
-        JSON.stringify(effectiveRequest),
-        traceparent,
-        requestId
-      );
-
-      if (resp.status === 404 && finalized) {
-        metrics.finalized_fallback_total.inc();
-        this.logger?.warn?.({ endpoint: 'finalized-stream', status: 404 }, 'finalized stream not found, fallback to non-finalized');
-        return this.streamBlocks(baseUrl, false, effectiveRequest, traceparent, onHeaders, requestId);
-      }
-
-      if (resp.status === 204) {
-        onHeaders?.(streamHeaders(resp));
-        return [];
-      }
-
-      if (resp.status === 400) {
-        const body = await readBody(resp);
-        const unknownField = extractUnknownField(body.text);
-        if (unknownField) {
-          metrics.portal_unsupported_fields_total.labels(unknownField).inc();
-          if (!isNegotiableField(unknownField)) {
-            throw portalUnsupportedFieldError(unknownField);
-          }
-          if (!unsupportedFields.has(unknownField)) {
-            unsupportedFields.add(unknownField);
-            this.unsupportedFieldsByBaseUrl.set(baseUrl, unsupportedFields);
-          }
-          const nextRequest = applyUnsupportedFields(request, unsupportedFields);
-          if (nextRequest !== effectiveRequest) {
-            effectiveRequest = nextRequest;
-            continue;
+      const endpoint = finalized ? 'finalized-stream' : 'stream';
+      const started = performance.now();
+      try {
+        const blocks = await collectStream(
+          client,
+          effectiveRequest,
+          headers,
+          finalized,
+          onHeaders,
+          typeof effectiveRequest.toBlock === 'number'
+        );
+        const status = blocks.length === 0 ? 204 : 200;
+        recordPortalMetrics(endpoint, status, started);
+        this.recordBreaker(status);
+        this.logger?.info?.({ endpoint, status }, 'portal response');
+        return this.ensureCompleteRange(
+          client,
+          effectiveRequest,
+          blocks,
+          headers,
+          finalized,
+          onHeaders
+        );
+      } catch (err) {
+        const status = httpStatusFromError(err);
+        if (status) {
+          recordPortalMetrics(endpoint, status, started);
+          this.recordBreaker(status);
+        } else {
+          this.recordBreaker(0);
+        }
+        if (finalized && status === 404) {
+          metrics.finalized_fallback_total.inc();
+          this.logger?.warn?.({ endpoint, status }, 'finalized stream not found, fallback to non-finalized');
+          return this.streamBlocks(baseUrl, false, effectiveRequest, traceparent, onHeaders, requestId);
+        }
+        if (isForkException(err)) {
+          throw conflictError(err.previousBlocks);
+        }
+        if (status === 400) {
+          const unknownField = extractUnknownField(errorBodyText(err));
+          if (unknownField) {
+            metrics.portal_unsupported_fields_total.labels(unknownField).inc();
+            if (!isNegotiableField(unknownField)) {
+              throw portalUnsupportedFieldError(unknownField);
+            }
+            if (!unsupportedFields.has(unknownField)) {
+              unsupportedFields.add(unknownField);
+              this.unsupportedFieldsByBaseUrl.set(baseUrl, unsupportedFields);
+            }
+            const nextRequest = applyUnsupportedFields(request, unsupportedFields);
+            if (nextRequest !== effectiveRequest) {
+              effectiveRequest = nextRequest;
+              continue;
+            }
           }
         }
-        throw mapPortalStatusError(resp.status, body);
+        this.logger?.warn?.({ endpoint, error: err instanceof Error ? err.message : String(err) }, 'portal error');
+        throw mapPortalError(err);
       }
-
-      if (resp.status !== 200) {
-        throw mapPortalStatusError(resp.status, await readBody(resp));
-      }
-
-      onHeaders?.(streamHeaders(resp));
-      const body = resp.body;
-      if (!body) {
-        return [];
-      }
-
-      const blocks = await parseNdjsonStream(body, {
-        maxLineBytes: this.maxNdjsonLineBytes,
-        maxBytes: this.maxNdjsonBytes
-      });
-      return this.ensureCompleteRange(url, effectiveRequest, blocks, traceparent, onHeaders, requestId);
     }
 
     throw serverError('portal field negotiation failed');
   }
 
-  private async ensureCompleteRange(
-    url: string,
-    request: PortalRequest,
-    blocks: PortalBlockResponse[],
-    traceparent?: string,
-    onHeaders?: (headers: PortalStreamHeaders) => void,
-    requestId?: string
-  ): Promise<PortalBlockResponse[]> {
-    if (typeof request.toBlock !== 'number') {
-      return blocks;
-    }
-    const bounded = filterBlocksInRange(blocks, request.fromBlock, request.toBlock);
-    const last = lastBlockNumber(bounded);
-    if (last === undefined || last >= request.toBlock) {
-      return bounded;
-    }
-    const enforceContinuity = !request.logs || request.includeAllBlocks === true;
-    if (!enforceContinuity) {
-      return bounded;
-    }
-    const collected = [...bounded];
-    let nextFrom = last + 1;
-    let nextLast = last;
-    while (nextLast < request.toBlock) {
-      const nextRequest: PortalRequest = { ...request, fromBlock: nextFrom, toBlock: request.toBlock };
-      const nextBlocks = await this.streamSegment(url, nextRequest, traceparent, onHeaders, requestId);
-      const nextBounded = filterBlocksInRange(nextBlocks, nextFrom, request.toBlock);
-      const lastInNext = lastBlockNumber(nextBounded);
-      if (lastInNext === undefined || lastInNext <= nextLast) {
-        this.logger?.warn?.(
-          { endpoint: endpointLabel(url), fromBlock: nextFrom, toBlock: request.toBlock },
-          'portal stream interrupted'
-        );
-        throw unavailableError('portal stream interrupted');
-      }
-      collected.push(...nextBounded);
-      nextLast = lastInNext;
-      nextFrom = nextLast + 1;
-    }
-    return collected;
-  }
-
-  private async streamSegment(
-    url: string,
-    request: PortalRequest,
-    traceparent?: string,
-    onHeaders?: (headers: PortalStreamHeaders) => void,
-    requestId?: string
-  ): Promise<PortalBlockResponse[]> {
-    const resp = await this.request(
-      url,
-      'POST',
-      'application/x-ndjson',
-      JSON.stringify(request),
-      traceparent,
-      requestId
-    );
-
-    if (resp.status === 204) {
-      onHeaders?.(streamHeaders(resp));
-      return [];
-    }
-
-    if (resp.status !== 200) {
-      throw mapPortalStatusError(resp.status, await readBody(resp));
-    }
-
-    onHeaders?.(streamHeaders(resp));
-    if (!resp.body) {
-      return [];
-    }
-    return parseNdjsonStream(resp.body, {
-      maxLineBytes: this.maxNdjsonLineBytes,
-      maxBytes: this.maxNdjsonBytes
-    });
-  }
-
   async getMetadata(baseUrl: string, traceparent?: string, requestId?: string): Promise<PortalMetadataResponse> {
+    if (this.isBreakerOpen()) {
+      this.logger?.warn?.({ endpoint: 'metadata' }, 'portal circuit open');
+      throw unavailableError('portal circuit open');
+    }
     const now = Date.now();
     const cached = this.metadataCache.get(baseUrl);
     if (cached) {
@@ -248,16 +219,71 @@ export class PortalClient {
     return data;
   }
 
+  buildDatasetBaseUrl(dataset: string): string {
+    const base = normalizePortalBaseUrl(this.baseUrl);
+    if (base.includes('{dataset}')) {
+      return normalizePortalBaseUrl(base.replace('{dataset}', dataset));
+    }
+    if (base.toLowerCase().endsWith(`/${dataset.toLowerCase()}`)) {
+      return normalizePortalBaseUrl(base);
+    }
+    return normalizePortalBaseUrl(`${base}/${dataset}`);
+  }
+
+  private getPortalClient(baseUrl: string): OfficialPortalClient {
+    const existing = this.clientsByBaseUrl.get(baseUrl);
+    if (existing) {
+      return existing;
+    }
+    const client = new OfficialPortalClient({
+      url: baseUrl,
+      http: this.httpClient,
+      maxBytes: this.maxStreamBytes
+    });
+    this.clientsByBaseUrl.set(baseUrl, client);
+    return client;
+  }
+
+  private requestHeaders(traceparent?: string, requestId?: string): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (this.apiKey) {
+      headers[this.apiKeyHeader] = this.apiKey;
+    }
+    if (traceparent) {
+      headers.traceparent = traceparent;
+    }
+    if (requestId) {
+      headers['X-Request-Id'] = requestId;
+    }
+    return headers;
+  }
+
   private async fetchMetadata(baseUrl: string, traceparent?: string, requestId?: string): Promise<PortalMetadataResponse> {
     const url = `${baseUrl}/metadata`;
-    const resp = await this.request(url, 'GET', 'application/json', undefined, traceparent, requestId);
-    metrics.portal_metadata_fetch_total.labels(String(resp.status)).inc();
-    if (resp.status !== 200) {
-      throw mapPortalStatusError(resp.status, await readBody(resp));
+    const headers = this.requestHeaders(traceparent, requestId);
+    const started = performance.now();
+    try {
+      const response = await this.httpClient.request<PortalMetadataResponse>('GET', url, {
+        headers,
+        httpTimeout: this.timeoutMs
+      });
+      metrics.portal_metadata_fetch_total.labels(String(response.status)).inc();
+      recordPortalMetrics('metadata', response.status, started);
+      this.recordBreaker(response.status);
+      this.logger?.info({ endpoint: 'metadata', dataset: response.body.dataset, realTime: response.body.real_time }, 'portal metadata');
+      return response.body;
+    } catch (err) {
+      const status = httpStatusFromError(err);
+      if (status) {
+        metrics.portal_metadata_fetch_total.labels(String(status)).inc();
+        recordPortalMetrics('metadata', status, started);
+        this.recordBreaker(status);
+      } else {
+        this.recordBreaker(0);
+      }
+      this.logger?.warn?.({ endpoint: 'metadata', error: err instanceof Error ? err.message : String(err) }, 'portal error');
+      throw mapPortalError(err);
     }
-    const body = (await resp.json()) as PortalMetadataResponse;
-    this.logger?.info({ endpoint: 'metadata', dataset: body.dataset, realTime: body.real_time }, 'portal metadata');
-    return body;
   }
 
   private refreshMetadata(baseUrl: string, traceparent?: string, requestId?: string) {
@@ -277,73 +303,6 @@ export class PortalClient {
     this.metadataRefreshInFlight.set(baseUrl, refresh);
   }
 
-  private async request(
-    url: string,
-    method: string,
-    accept: string,
-    body?: string,
-    traceparent?: string,
-    requestId?: string
-  ): Promise<Response> {
-    if (this.isBreakerOpen()) {
-      this.logger?.warn?.({ endpoint: endpointLabel(url) }, 'portal circuit open');
-      throw unavailableError('portal circuit open');
-    }
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
-
-    const headers: Record<string, string> = {
-      Accept: accept
-    };
-    if (body) {
-      headers['Content-Type'] = 'application/json';
-    }
-    if (this.apiKey) {
-      headers[this.apiKeyHeader] = this.apiKey;
-    }
-    if (traceparent) {
-      headers.traceparent = traceparent;
-    }
-    if (requestId) {
-      headers['X-Request-Id'] = requestId;
-    }
-
-    const start = performance.now();
-    try {
-      const resp = await this.fetchImpl(url, {
-        method,
-        headers,
-        body,
-        signal: controller.signal
-      });
-
-      clearTimeout(timeout);
-      const elapsed = (performance.now() - start) / 1000;
-      this.recordBreaker(resp.status);
-      metrics.portal_requests_total.labels(endpointLabel(url), String(resp.status)).inc();
-      metrics.portal_latency_seconds.labels(endpointLabel(url)).observe(elapsed);
-      this.logger?.info({ endpoint: endpointLabel(url), status: resp.status, durationMs: Math.round(elapsed * 1000) }, 'portal response');
-
-      return resp;
-    } catch (err) {
-      clearTimeout(timeout);
-      this.recordBreaker(0);
-      this.logger?.warn?.({ endpoint: endpointLabel(url), error: err instanceof Error ? err.message : String(err) }, 'portal error');
-      throw normalizeError(err);
-    }
-  }
-
-  buildDatasetBaseUrl(dataset: string): string {
-    const base = normalizePortalBaseUrl(this.baseUrl);
-    if (base.includes('{dataset}')) {
-      return normalizePortalBaseUrl(base.replace('{dataset}', dataset));
-    }
-    if (base.toLowerCase().endsWith(`/${dataset.toLowerCase()}`)) {
-      return normalizePortalBaseUrl(base);
-    }
-    return normalizePortalBaseUrl(`${base}/${dataset}`);
-  }
-
   private getUnsupportedFields(baseUrl: string): Set<string> {
     const existing = this.unsupportedFieldsByBaseUrl.get(baseUrl);
     if (existing) {
@@ -352,6 +311,48 @@ export class PortalClient {
     const set = new Set<string>();
     this.unsupportedFieldsByBaseUrl.set(baseUrl, set);
     return set;
+  }
+
+  private async ensureCompleteRange(
+    client: OfficialPortalClient,
+    request: PortalRequest,
+    blocks: PortalBlockResponse[],
+    headers: Record<string, string>,
+    finalized: boolean,
+    onHeaders?: (headers: PortalStreamHeaders) => void
+  ): Promise<PortalBlockResponse[]> {
+    if (typeof request.toBlock !== 'number') {
+      return blocks;
+    }
+    const bounded = filterBlocksInRange(blocks, request.fromBlock, request.toBlock);
+    const last = lastBlockNumber(bounded);
+    if (last === undefined || last >= request.toBlock) {
+      return bounded;
+    }
+    const enforceContinuity = !request.logs || request.includeAllBlocks === true;
+    if (!enforceContinuity) {
+      return bounded;
+    }
+    const collected = [...bounded];
+    let nextFrom = last + 1;
+    let nextLast = last;
+    while (nextLast < request.toBlock) {
+      const nextRequest: PortalRequest = { ...request, fromBlock: nextFrom, toBlock: request.toBlock };
+      const nextBlocks = await ensureStreamSegment(client, nextRequest, headers, finalized, onHeaders);
+      const nextBounded = filterBlocksInRange(nextBlocks, nextFrom, request.toBlock);
+      const lastInNext = lastBlockNumber(nextBounded);
+      if (lastInNext === undefined || lastInNext <= nextLast) {
+        this.logger?.warn?.(
+          { endpoint: finalized ? 'finalized-stream' : 'stream', fromBlock: nextFrom, toBlock: request.toBlock },
+          'portal stream interrupted'
+        );
+        throw unavailableError('portal stream interrupted');
+      }
+      collected.push(...nextBounded);
+      nextLast = lastInNext;
+      nextFrom = nextLast + 1;
+    }
+    return collected;
   }
 
   private isBreakerOpen(): boolean {
@@ -398,6 +399,38 @@ export class PortalClient {
   }
 }
 
+function recordPortalMetrics(endpoint: string, status: number, startedAt: number) {
+  const elapsed = (performance.now() - startedAt) / 1000;
+  metrics.portal_requests_total.labels(endpoint, String(status)).inc();
+  metrics.portal_latency_seconds.labels(endpoint).observe(elapsed);
+}
+
+function mapPortalError(err: unknown) {
+  if (err instanceof HttpError) {
+    const status = err.response.status;
+    const bodyText = errorBodyText(err);
+    switch (status) {
+      case 400:
+        return invalidParams(`invalid portal response: ${bodyText}`);
+      case 401:
+      case 403:
+        return unauthorizedError();
+      case 404:
+        return missingDataError('block not found');
+      case 409:
+        return conflictError(extractPreviousBlocks(err.response.body));
+      case 429:
+        metrics.rate_limit_total.labels('portal').inc();
+        return rateLimitError('Too Many Requests');
+      case 503:
+        return unavailableError('unavailable');
+      default:
+        return serverError('server error');
+    }
+  }
+  return normalizeError(err);
+}
+
 export function normalizePortalBaseUrl(raw: string): string {
   let base = raw.trim();
   if (base.endsWith('/')) {
@@ -411,148 +444,6 @@ export function normalizePortalBaseUrl(raw: string): string {
     }
   }
   return base;
-}
-
-function endpointLabel(url: string): string {
-  if (url.endsWith('/head')) return 'head';
-  if (url.endsWith('/finalized-head')) return 'finalized-head';
-  if (url.endsWith('/stream')) return 'stream';
-  if (url.endsWith('/finalized-stream')) return 'finalized-stream';
-  if (url.endsWith('/metadata')) return 'metadata';
-  return 'unknown';
-}
-
-async function readBody(resp: Response): Promise<{ text: string; json?: unknown; jsonError?: string }> {
-  try {
-    const text = await resp.text();
-    let json: unknown = undefined;
-    let jsonError: string | undefined;
-    try {
-      json = text ? JSON.parse(text) : undefined;
-    } catch (err) {
-      json = undefined;
-      jsonError = String(err);
-    }
-    const resolvedText = text || 'response body unavailable';
-    const textWithParseError = jsonError ? `${resolvedText} (json parse error: ${jsonError})` : resolvedText;
-    return { text: textWithParseError, json, jsonError };
-  } catch (err) {
-    return { text: `response body unavailable: ${err instanceof Error ? err.message : String(err)}` };
-  }
-}
-
-function extractUnknownField(text: string): string | undefined {
-  const match = /unknown field `([^`]+)`/i.exec(text);
-  return match?.[1];
-}
-
-const NEGOTIABLE_FIELDS = new Set(['authorizationList']);
-
-function isNegotiableField(field: string): boolean {
-  return NEGOTIABLE_FIELDS.has(field);
-}
-
-function applyUnsupportedFields(request: PortalRequest, unsupported: Set<string>): PortalRequest {
-  if (!request.fields || unsupported.size === 0) {
-    return request;
-  }
-  const { fields } = request;
-  const block = filterFieldMap(fields.block, unsupported);
-  const transaction = filterFieldMap(fields.transaction, unsupported);
-  const log = filterFieldMap(fields.log, unsupported);
-  const trace = filterFieldMap(fields.trace, unsupported);
-  const stateDiff = filterFieldMap(fields.stateDiff, unsupported);
-
-  const nextFields = compactFields({ block, transaction, log, trace, stateDiff });
-  if (
-    nextFields.block === fields.block &&
-    nextFields.transaction === fields.transaction &&
-    nextFields.log === fields.log &&
-    nextFields.trace === fields.trace &&
-    nextFields.stateDiff === fields.stateDiff
-  ) {
-    return request;
-  }
-  return { ...request, fields: Object.keys(nextFields).length > 0 ? nextFields : undefined };
-}
-
-function filterFieldMap(
-  map: Record<string, boolean> | undefined,
-  unsupported: Set<string>
-): Record<string, boolean> | undefined {
-  if (!map) {
-    return undefined;
-  }
-  let changed = false;
-  const next: Record<string, boolean> = {};
-  for (const [key, value] of Object.entries(map)) {
-    if (unsupported.has(key)) {
-      changed = true;
-      continue;
-    }
-    next[key] = value;
-  }
-  if (!changed) {
-    return map;
-  }
-  return Object.keys(next).length > 0 ? next : undefined;
-}
-
-function compactFields(fields: {
-  block?: Record<string, boolean>;
-  transaction?: Record<string, boolean>;
-  log?: Record<string, boolean>;
-  trace?: Record<string, boolean>;
-  stateDiff?: Record<string, boolean>;
-}) {
-  const compacted: typeof fields = {};
-  if (fields.block && Object.keys(fields.block).length > 0) compacted.block = fields.block;
-  if (fields.transaction && Object.keys(fields.transaction).length > 0) compacted.transaction = fields.transaction;
-  if (fields.log && Object.keys(fields.log).length > 0) compacted.log = fields.log;
-  if (fields.trace && Object.keys(fields.trace).length > 0) compacted.trace = fields.trace;
-  if (fields.stateDiff && Object.keys(fields.stateDiff).length > 0) compacted.stateDiff = fields.stateDiff;
-  return compacted;
-}
-
-function mapPortalStatusError(status: number, body: { text: string; json?: unknown; jsonError?: string }) {
-  switch (status) {
-    case 400:
-      return invalidParams(`invalid portal response: ${body.text}`, body.jsonError ? { jsonError: body.jsonError } : undefined);
-    case 401:
-    case 403:
-      return unauthorizedError();
-    case 404:
-      return missingDataError('block not found');
-    case 409:
-      return conflictError(extractPreviousBlocks(body.json));
-    case 429:
-      metrics.rate_limit_total.labels('portal').inc();
-      return rateLimitError('Too Many Requests');
-    case 503:
-      return unavailableError('unavailable');
-    default:
-      return serverError('server error');
-  }
-}
-
-function streamHeaders(resp: Response): PortalStreamHeaders {
-  const number = resp.headers.get('x-sqd-finalized-head-number') || undefined;
-  const hash = resp.headers.get('x-sqd-finalized-head-hash') || undefined;
-  return {
-    finalizedHeadNumber: number || undefined,
-    finalizedHeadHash: hash || undefined
-  };
-}
-
-function filterBlocksInRange(blocks: PortalBlockResponse[], fromBlock: number, toBlock: number): PortalBlockResponse[] {
-  return blocks.filter((block) => block.header.number >= fromBlock && block.header.number <= toBlock);
-}
-
-function lastBlockNumber(blocks: PortalBlockResponse[]): number | undefined {
-  if (blocks.length === 0) {
-    return undefined;
-  }
-  return blocks[blocks.length - 1]?.header.number;
 }
 
 function extractPreviousBlocks(payload: unknown): unknown[] | undefined {

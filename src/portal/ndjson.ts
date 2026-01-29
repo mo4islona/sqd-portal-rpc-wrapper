@@ -6,6 +6,7 @@ import { PortalBlockResponse } from './types';
 interface NdjsonLimits {
   maxLineBytes: number;
   maxBytes: number;
+  allowTruncated?: boolean;
 }
 
 export async function parseNdjsonStream(
@@ -54,6 +55,9 @@ export async function parseNdjsonStream(
     try {
       blocks.push(JSON.parse(remaining));
     } catch (err) {
+      if (limits.allowTruncated) {
+        return blocks;
+      }
       throw serverError(`ndjson parse error: ${err instanceof Error ? err.message : String(err)}`);
     }
     metrics.ndjson_lines_total.inc();

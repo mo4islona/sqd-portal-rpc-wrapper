@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Standalone SQD Portal JSON-RPC wrapper service",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -22,6 +22,8 @@
     "node": ">=20.10.0"
   },
   "dependencies": {
+    "@subsquid/http-client": "^1.8.0",
+    "@subsquid/portal-client": "^0.4.0",
     "fastify": "^4.29.0",
     "prom-client": "^15.1.0"
   },

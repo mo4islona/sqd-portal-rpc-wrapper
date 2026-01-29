@@ -13,8 +13,17 @@ function streamResponse(body: string, status = 200) {
   return new Response(stream, { status });
 }
 
+const DEFAULT_HASH = `0x${'11'.repeat(32)}`;
+const DEFAULT_PARENT_HASH = `0x${'22'.repeat(32)}`;
+
+function blockLine(number: number) {
+  return `${JSON.stringify({
+    header: { number, hash: DEFAULT_HASH, parentHash: DEFAULT_PARENT_HASH }
+  })}\n`;
+}
+
 describe('PortalClient stream retry', () => {
-  it('retries when stream truncates before toBlock', async () => {
+  it('retries when stream ends before toBlock', async () => {
     const cfg = loadConfig({
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
@@ -27,9 +36,9 @@ describe('PortalClient stream retry', () => {
         const body = JSON.parse(String(init?.body));
         calls.push({ fromBlock: body.fromBlock, toBlock: body.toBlock });
         if (calls.length === 1) {
-          return streamResponse('{"header":{"number":1}}\n', 200);
+          return streamResponse(blockLine(1), 200);
         }
-        return streamResponse('{"header":{"number":2}}\n', 200);
+        return streamResponse(blockLine(2), 200);
       }
       return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
     });
@@ -50,16 +59,20 @@ describe('PortalClient stream retry', () => {
     expect(onHeaders).toHaveBeenCalled();
   });
 
-  it('throws when stream does not advance', async () => {
+  it('throws when retry cannot advance to toBlock', async () => {
     const cfg = loadConfig({
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
       PORTAL_CHAIN_ID: '1'
     });
-    const fetchImpl = vi.fn().mockImplementation((input: unknown) => {
+    const fetchImpl = vi.fn().mockImplementation((input: unknown, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : String(input);
       if (url.endsWith('/stream')) {
-        return streamResponse('{"header":{"number":1}}\n', 200);
+        const body = JSON.parse(String(init?.body));
+        if (body.fromBlock === 1) {
+          return streamResponse(blockLine(1), 200);
+        }
+        return new Response(null, { status: 204 });
       }
       return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
     });
@@ -89,7 +102,7 @@ describe('PortalClient stream retry', () => {
       if (url.endsWith('/stream')) {
         calls += 1;
         if (calls === 1) {
-          return streamResponse('{"header":{"number":1}}\n', 200);
+          return streamResponse(blockLine(1), 200);
         }
         return new Response('down', { status: 503 });
       }
@@ -105,34 +118,6 @@ describe('PortalClient stream retry', () => {
     ).rejects.toThrow('unavailable');
   });
 
-  it('fails when retry response has no body', async () => {
-    const cfg = loadConfig({
-      SERVICE_MODE: 'single',
-      PORTAL_DATASET: 'ethereum-mainnet',
-      PORTAL_CHAIN_ID: '1'
-    });
-    let calls = 0;
-    const fetchImpl = vi.fn().mockImplementation((input: unknown) => {
-      const url = typeof input === 'string' ? input : String(input);
-      if (url.endsWith('/stream')) {
-        calls += 1;
-        if (calls === 1) {
-          return streamResponse('{"header":{"number":1}}\n', 200);
-        }
-        return new Response(null, { status: 200 });
-      }
-      return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
-    });
-    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn() } });
-    await expect(
-      client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, {
-        type: 'evm',
-        fromBlock: 1,
-        toBlock: 2
-      })
-    ).rejects.toThrow('portal stream interrupted');
-  });
-
   it('skips continuity enforcement for log streams without includeAllBlocks', async () => {
     const cfg = loadConfig({
       SERVICE_MODE: 'single',
@@ -144,7 +129,7 @@ describe('PortalClient stream retry', () => {
       const url = typeof input === 'string' ? input : String(input);
       if (url.endsWith('/stream')) {
         calls += 1;
-        return streamResponse('{"header":{"number":1}}\n', 200);
+        return streamResponse(blockLine(1), 200);
       }
       return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
     });
@@ -166,12 +151,16 @@ describe('PortalClient stream retry', () => {
       PORTAL_CHAIN_ID: '1'
     });
     let calls = 0;
-    const fetchImpl = vi.fn().mockImplementation((input: unknown) => {
+    const fetchImpl = vi.fn().mockImplementation((input: unknown, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : String(input);
       if (url.endsWith('/stream')) {
         calls += 1;
         if (calls === 1) {
-          return streamResponse('{"header":{"number":1}}\n', 200);
+          return streamResponse(blockLine(1), 200);
+        }
+        const body = JSON.parse(String(init?.body));
+        if (body.fromBlock === 2) {
+          return new Response(null, { status: 204 });
         }
         return new Response(null, { status: 204 });
       }
@@ -199,7 +188,7 @@ describe('PortalClient stream retry', () => {
       if (url.endsWith('/stream')) {
         calls += 1;
         if (calls === 1) {
-          return streamResponse('{"header":{"number":1}}\n', 200);
+          return streamResponse(blockLine(1), 200);
         }
         return new Response(null, { status: 204 });
       }
@@ -228,7 +217,7 @@ describe('PortalClient stream retry', () => {
     const fetchImpl = vi.fn().mockImplementation((input: unknown) => {
       const url = typeof input === 'string' ? input : String(input);
       if (url.endsWith('/stream')) {
-        return streamResponse('{"header":{"number":1}}\n', 200);
+        return streamResponse(blockLine(1), 200);
       }
       return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
     });
