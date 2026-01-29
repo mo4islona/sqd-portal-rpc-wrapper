@@ -9,6 +9,7 @@ import { PortalClient, normalizePortalBaseUrl } from './portal/client';
 import type { PortalStreamHeaders } from './portal/client';
 import { parseJsonRpcPayload, JsonRpcResponse } from './jsonrpc';
 import { handleJsonRpc } from './rpc/handlers';
+import { coalesceGetBlockByNumber } from './rpc/batch';
 import { UpstreamRpcClient } from './rpc/upstream';
 import { ConcurrencyLimiter } from './util/concurrency';
 import { normalizeError, unauthorizedError, overloadError, RpcError, invalidParams, invalidRequest, parseError } from './errors';
@@ -211,8 +212,20 @@ async function handleRpcRequest(
 
     const responses: JsonRpcResponse[] = [];
     let maxStatus = 200;
+    const coalesced = parsed.isBatch
+      ? await coalesceGetBlockByNumber(parsed.items, {
+          config,
+          portal,
+          upstream,
+          chainId,
+          traceparent,
+          requestId,
+          recordPortalHeaders,
+          logger: req.log
+        })
+      : new Map();
 
-    for (const item of parsed.items) {
+    for (const [index, item] of parsed.items.entries()) {
       if (item.error) {
         responses.push(item.error);
         maxStatus = Math.max(maxStatus, 400);
@@ -223,21 +236,32 @@ async function handleRpcRequest(
       const request = item.request!;
       const hasId = 'id' in request;
       const methodLabel = request.method || 'unknown';
-      const startedRequest = performance.now();
-      const { response, httpStatus } = await handleJsonRpc(request, {
-        config,
-        portal,
-        chainId,
-        traceparent,
-        requestId,
-        logger: req.log,
-        recordPortalHeaders,
-        upstream,
-        requestCache,
-        requestTimeoutMs: config.handlerTimeoutMs,
-        startBlockCache
-      });
-      metrics.rpc_duration_seconds.labels(methodLabel).observe((performance.now() - startedRequest) / 1000);
+      const coalescedResponse = coalesced.get(index);
+      let response: JsonRpcResponse;
+      let httpStatus: number;
+      let duration: number;
+      if (coalescedResponse) {
+        response = coalescedResponse.response;
+        httpStatus = coalescedResponse.httpStatus;
+        duration = coalescedResponse.durationMs;
+      } else {
+        const startedRequest = performance.now();
+        ({ response, httpStatus } = await handleJsonRpc(request, {
+          config,
+          portal,
+          chainId,
+          traceparent,
+          requestId,
+          logger: req.log,
+          recordPortalHeaders,
+          upstream,
+          requestCache,
+          requestTimeoutMs: config.handlerTimeoutMs,
+          startBlockCache
+        }));
+        duration = performance.now() - startedRequest;
+      }
+      metrics.rpc_duration_seconds.labels(methodLabel).observe(duration / 1000);
       if (hasId) {
         responses.push(response);
         maxStatus = Math.max(maxStatus, httpStatus);

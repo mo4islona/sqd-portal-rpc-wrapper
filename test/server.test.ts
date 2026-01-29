@@ -605,6 +605,139 @@ describe('server', () => {
     vi.unstubAllGlobals();
   });
 
+  it('coalesces eth_getBlockByNumber batch into one portal stream', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const streamCalls: Array<{ fromBlock?: number; toBlock?: number }> = [];
+    const makeBlock = (num: number) => ({
+      header: {
+        number: num,
+        hash: `0x${String(num).padStart(64, '0')}`,
+        parentHash: '0x' + '22'.repeat(32),
+        timestamp: 1000,
+        miner: '0x' + '33'.repeat(20),
+        gasUsed: 21000,
+        gasLimit: 30000000,
+        nonce: 1,
+        difficulty: 1,
+        totalDifficulty: 1,
+        size: 500,
+        stateRoot: '0x' + '44'.repeat(32),
+        transactionsRoot: '0x' + '55'.repeat(32),
+        receiptsRoot: '0x' + '66'.repeat(32),
+        logsBloom: '0x' + '00'.repeat(256),
+        extraData: '0x',
+        mixHash: '0x' + '77'.repeat(32),
+        sha3Uncles: '0x' + '88'.repeat(32)
+      },
+      transactions: [{ hash: '0xtx', transactionIndex: 0 }]
+    });
+    const fetchImpl = vi.fn().mockImplementation(async (input: unknown, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : String(input);
+      if (url.endsWith('/metadata')) {
+        return new Response(JSON.stringify({ dataset: 'ethereum-mainnet', real_time: true, start_block: 0 }), { status: 200 });
+      }
+      if (url.endsWith('/stream') || url.endsWith('/finalized-stream')) {
+        const body = JSON.parse(String(init?.body));
+        streamCalls.push({ fromBlock: body.fromBlock, toBlock: body.toBlock });
+        const ndjson = [makeBlock(5), makeBlock(6), makeBlock(7)].map((block) => JSON.stringify(block)).join('\n');
+        return new Response(`${ndjson}\n`, { status: 200, headers: { 'content-type': 'application/x-ndjson' } });
+      }
+      if (url.endsWith('/head') || url.endsWith('/finalized-head')) {
+        return new Response(JSON.stringify({ number: 7, hash: '0x' + '11'.repeat(32) }), { status: 200 });
+      }
+      return new Response('not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchImpl);
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify([
+        { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x5', false] },
+        { jsonrpc: '2.0', id: 2, method: 'eth_getBlockByNumber', params: ['0x6', false] },
+        { jsonrpc: '2.0', id: 3, method: 'eth_getBlockByNumber', params: ['0x7', false] }
+      ])
+    });
+    expect(res.statusCode).toBe(200);
+    expect(streamCalls).toHaveLength(1);
+    expect(streamCalls[0]).toEqual({ fromBlock: 5, toBlock: 7 });
+    const body = res.json() as Array<{ id: number; result?: { number?: string } }>;
+    const byId = new Map(body.map((entry) => [entry.id, entry]));
+    expect(byId.get(1)?.result?.number).toBe('0x5');
+    expect(byId.get(2)?.result?.number).toBe('0x6');
+    expect(byId.get(3)?.result?.number).toBe('0x7');
+    await server.close();
+    vi.unstubAllGlobals();
+  });
+
+  it('skips coalescing when block range has gaps', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    let streamCalls = 0;
+    const makeBlock = (num: number) => ({
+      header: {
+        number: num,
+        hash: `0x${String(num).padStart(64, '0')}`,
+        parentHash: '0x' + '22'.repeat(32),
+        timestamp: 1000,
+        miner: '0x' + '33'.repeat(20),
+        gasUsed: 21000,
+        gasLimit: 30000000,
+        nonce: 1,
+        difficulty: 1,
+        totalDifficulty: 1,
+        size: 500,
+        stateRoot: '0x' + '44'.repeat(32),
+        transactionsRoot: '0x' + '55'.repeat(32),
+        receiptsRoot: '0x' + '66'.repeat(32),
+        logsBloom: '0x' + '00'.repeat(256),
+        extraData: '0x',
+        mixHash: '0x' + '77'.repeat(32),
+        sha3Uncles: '0x' + '88'.repeat(32)
+      },
+      transactions: [{ hash: '0xtx', transactionIndex: 0 }]
+    });
+    const fetchImpl = vi.fn().mockImplementation(async (input: unknown, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : String(input);
+      if (url.endsWith('/metadata')) {
+        return new Response(JSON.stringify({ dataset: 'ethereum-mainnet', real_time: true, start_block: 0 }), { status: 200 });
+      }
+      if (url.endsWith('/stream') || url.endsWith('/finalized-stream')) {
+        streamCalls += 1;
+        const body = JSON.parse(String(init?.body));
+        const block = makeBlock(body.fromBlock);
+        return new Response(`${JSON.stringify(block)}\n`, { status: 200, headers: { 'content-type': 'application/x-ndjson' } });
+      }
+      if (url.endsWith('/head') || url.endsWith('/finalized-head')) {
+        return new Response(JSON.stringify({ number: 7, hash: '0x' + '11'.repeat(32) }), { status: 200 });
+      }
+      return new Response('not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchImpl);
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify([
+        { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x5', false] },
+        { jsonrpc: '2.0', id: 2, method: 'eth_getBlockByNumber', params: ['0x7', false] }
+      ])
+    });
+    expect(res.statusCode).toBe(200);
+    expect(streamCalls).toBe(2);
+    await server.close();
+    vi.unstubAllGlobals();
+  });
+
   it('skips notifications in batch', async () => {
     const config = loadConfig({
       SERVICE_MODE: 'single',
