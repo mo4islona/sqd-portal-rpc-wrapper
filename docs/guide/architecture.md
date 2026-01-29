@@ -100,6 +100,24 @@ sequenceDiagram
 4. Stream blocks with log filters
 5. Flatten and convert logs to JSON-RPC format
 
+## Batch Coalescing
+
+Batch requests for `eth_getBlockByNumber`, `eth_getTransactionByBlockNumberAndIndex`, and `trace_block`
+are coalesced into fewer Portal streams.
+
+- Group by finality (`head` vs `finalized`)
+- Merge contiguous block numbers into segments
+- Single Portal stream per segment
+- Reuse full‑transaction stream for hash‑only block requests in the same segment
+- Return `null`/`[]` when blocks are missing or below `start_block`
+
+```
+[b5][b6]   [b8]
+   │         │
+   ├─ segment (5..6) ──► Portal stream (full tx if needed)
+   └─ segment (8..8) ──► Portal stream
+```
+
 ## Finalized Block Handling
 
 The wrapper supports Ethereum's finalized/safe block tags:

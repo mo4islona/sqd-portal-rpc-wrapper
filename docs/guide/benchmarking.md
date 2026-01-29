@@ -58,6 +58,12 @@ BENCH_BATCH_METHODS=eth_blockNumber \
 npm run bench -- --json
 ```
 
+## Batch Coalescing Notes
+
+For batch methods that hit Portal streams (`eth_getBlockByNumber`, `eth_getTransactionByBlockNumberAndIndex`,
+`trace_block`), the wrapper coalesces contiguous block numbers into fewer Portal requests. Benchmark batch
+results therefore reflect the coalescing behavior, not a 1:1 upstream request count.
+
 ## Latest Report
 
 The latest benchmark report is published in the docs:
