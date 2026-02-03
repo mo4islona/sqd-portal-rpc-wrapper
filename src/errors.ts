@@ -157,7 +157,7 @@ export function serverError(message = 'server error'): RpcError {
   return new RpcError({
     message,
     code: -32603,
-    httpStatus: 502,
+    httpStatus: 500,
     category: 'server_error'
   });
 }
@@ -166,7 +166,7 @@ export function portalUnsupportedFieldError(field: string): RpcError {
   return new RpcError({
     message: `portal does not support required field ${field}`,
     code: -32603,
-    httpStatus: 502,
+    httpStatus: 500,
     category: 'server_error',
     data: { requiredField: field }
   });
