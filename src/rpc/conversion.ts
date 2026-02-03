@@ -32,9 +32,9 @@ export function convertBlockToRpc(block: PortalBlockResponse, fullTx: boolean, u
   if (totalDifficulty !== undefined) {
     result.totalDifficulty = totalDifficulty;
   }
-  if (h.withdrawalsRoot) {
-    result.withdrawalsRoot = h.withdrawalsRoot;
-  }
+  // if (h.withdrawalsRoot) {
+  //   result.withdrawalsRoot = h.withdrawalsRoot;
+  // }
   const blobGasUsed = quantityHexIfSet(h.blobGasUsed);
   if (blobGasUsed !== undefined) {
     result.blobGasUsed = blobGasUsed;
@@ -43,9 +43,9 @@ export function convertBlockToRpc(block: PortalBlockResponse, fullTx: boolean, u
   if (excessBlobGas !== undefined) {
     result.excessBlobGas = excessBlobGas;
   }
-  if (h.parentBeaconBlockRoot) {
-    result.parentBeaconBlockRoot = h.parentBeaconBlockRoot;
-  }
+  // if (h.parentBeaconBlockRoot) {
+  //   result.parentBeaconBlockRoot = h.parentBeaconBlockRoot;
+  // }
   if (block.withdrawals) {
     result.withdrawals = block.withdrawals.map((withdrawal) => convertWithdrawalToRpc(withdrawal));
   }
