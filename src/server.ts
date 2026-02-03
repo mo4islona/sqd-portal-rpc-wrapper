@@ -1,18 +1,26 @@
 import fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { gunzip } from 'node:zlib';
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { promisify } from 'node:util';
 import { Config } from './config';
 import { metrics, metricsPayload } from './metrics';
-import { PortalClient, normalizePortalBaseUrl } from './portal/client';
 import type { PortalStreamHeaders } from './portal/client';
-import { parseJsonRpcPayload, JsonRpcResponse } from './jsonrpc';
+import { normalizePortalBaseUrl, PortalClient } from './portal/client';
+import { JsonRpcResponse, parseJsonRpcPayload } from './jsonrpc';
 import { handleJsonRpc } from './rpc/handlers';
 import { coalesceBatchRequests } from './rpc/batch';
 import { UpstreamRpcClient } from './rpc/upstream';
 import { ConcurrencyLimiter } from './util/concurrency';
-import { normalizeError, unauthorizedError, overloadError, RpcError, invalidParams, invalidRequest, parseError } from './errors';
+import {
+  invalidParams,
+  invalidRequest,
+  normalizeError,
+  overloadError,
+  parseError,
+  RpcError,
+  unauthorizedError
+} from './errors';
 import { defaultDatasetMap } from './portal/mapping';
 
 const gunzipAsync = promisify(gunzip);
@@ -23,10 +31,20 @@ export interface BuildServerOptions {
 
 export async function buildServer(config: Config, options?: BuildServerOptions): Promise<FastifyInstance> {
   const server = fastify({
+    disableRequestLogging: process.env.DISABLE_DEFAULT_REQUEST_LOGGING === 'true',
     logger: {
+      base: null,
       level: process.env.LOG_LEVEL || 'info',
-      redact: ['req.headers.authorization', 'req.headers.x-api-key', 'req.headers.X-API-Key']
+      redact: ['req.headers.authorization', 'req.headers.x-api-key', 'req.headers.X-API-Key'],
+      formatters: {
+        level(label: string) {
+          return { level: label };
+          }
+      }
     },
+    trustProxy: process.env.TRUST_PROXY === 'true',
+    requestIdHeader: 'x-request-id',
+    requestIdLogLabel: 'requestId',
     bodyLimit: config.maxRequestBodyBytes
   });
 
@@ -115,8 +133,7 @@ export async function buildServer(config: Config, options?: BuildServerOptions):
   server.get('/healthz', async () => ({ status: 'ok' }));
   server.get('/readyz', async (req, reply) => {
     try {
-      const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined;
-      await checkPortalReady(config, portal, requestId);
+      await checkPortalReady(config, portal, req.id);
       reply.send({ status: 'ready' });
     } catch (err) {
       req.log.warn({ error: String(err) }, 'portal readiness check failed');
@@ -196,7 +213,6 @@ async function handleRpcRequest(
     }
 
     const traceparent = typeof req.headers.traceparent === 'string' ? req.headers.traceparent : undefined;
-    const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : randomUUID();
     const payload = req.body;
     const parsed = parseJsonRpcPayload(payload);
     if (parsed.isBatch) {
@@ -223,7 +239,7 @@ async function handleRpcRequest(
           upstream,
           chainId,
           traceparent,
-          requestId,
+          requestId: req.id,
           recordPortalHeaders,
           logger: req.log
         })
@@ -255,7 +271,7 @@ async function handleRpcRequest(
           portal,
           chainId,
           traceparent,
-          requestId,
+          requestId: req.id,
           logger: req.log,
           recordPortalHeaders,
           upstream,
@@ -310,7 +326,7 @@ async function handleRpcRequest(
     }
     reply.type('application/json').code(maxStatus).send(output);
     const durationMs = Date.now() - startedAt;
-    req.log.info({ requestId, chainId, methods, status: maxStatus, durationMs }, 'rpc response');
+    req.log.debug({ chainId, methods, status: maxStatus, durationMs }, 'rpc response');
   } catch (err) {
     const rpcError = err instanceof RpcError ? err : normalizeError(err);
     metrics.errors_total.labels(rpcError.category).inc();
