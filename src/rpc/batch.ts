@@ -30,7 +30,10 @@ export interface CoalesceContext {
   traceparent?: string;
   requestId: string;
   recordPortalHeaders?: (headers: PortalStreamHeaders) => void;
-  logger?: { warn?: (obj: Record<string, unknown>, msg: string) => void };
+  logger?: {
+    debug?: (obj: Record<string, unknown>, msg: string) => void;
+    warn?: (obj: Record<string, unknown>, msg: string) => void
+  };
 }
 
 export interface CoalescedResponse {
@@ -345,8 +348,12 @@ async function coalesceBlockGroups(
         },
         transactions: [{}]
       };
+
       let blocks: Awaited<ReturnType<PortalClient['streamBlocks']>>;
       const started = performance.now();
+
+      ctx.logger?.debug?.({ fromBlock, toBlock, request: portalReq }, 'streaming blocks from portal for batch coalescing');
+
       try {
         blocks = await ctx.portal.streamBlocks(
           baseUrl,

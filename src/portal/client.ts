@@ -30,7 +30,7 @@ export type { PortalStreamHeaders } from './stream';
 export interface PortalClientOptions {
   fetchImpl?: typeof fetch;
   httpClient?: HttpClient;
-  logger?: { info: (obj: Record<string, unknown>, msg: string) => void; warn?: (obj: Record<string, unknown>, msg: string) => void };
+  logger?: { info: (obj: Record<string, unknown>, msg: string) => void; debug: (obj: Record<string, unknown>, msg: string) => void; warn?: (obj: Record<string, unknown>, msg: string) => void };
 }
 
 export class PortalClient {
@@ -95,7 +95,7 @@ export class PortalClient {
       if (!head) {
         throw missingDataError('block not found');
       }
-      this.logger?.info?.({ endpoint, status: 200 }, 'portal response');
+      this.logger?.debug?.({ endpoint, status: 200 }, 'portal response');
       return { head, finalizedAvailable: finalized };
     } catch (err) {
       const status = httpStatusFromError(err);
@@ -145,9 +145,10 @@ export class PortalClient {
           typeof effectiveRequest.toBlock === 'number'
         );
         const status = blocks.length === 0 ? 204 : 200;
+
         recordPortalMetrics(endpoint, status, started);
         this.recordBreaker(status);
-        this.logger?.info?.({ endpoint, status }, 'portal response');
+        this.logger?.debug?.({ endpoint, status }, 'portal response');
         return this.ensureCompleteRange(
           client,
           effectiveRequest,

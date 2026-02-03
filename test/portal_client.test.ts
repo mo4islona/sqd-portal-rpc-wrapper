@@ -85,7 +85,7 @@ describe('PortalClient', () => {
       }
       return jsonResponse({ number: 7, hash: '0xabc' });
     };
-    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn } });
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn, debug: vi.fn() } });
     const result = await client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', true);
     expect(result.head.number).toBe(7);
     expect(result.finalizedAvailable).toBe(false);
@@ -155,7 +155,7 @@ describe('PortalClient', () => {
       }
       return jsonResponse({ number: 1, hash: '0xabc' });
     });
-    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn() } });
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() } });
     const blocks = await client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', true, {
       type: 'evm',
       fromBlock: 1,
@@ -690,7 +690,7 @@ describe('PortalClient', () => {
     const fetchImpl = async () => {
       throw new Error('boom');
     };
-    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn } });
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn, debug: vi.fn() } });
     await expect(
       client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, { type: 'evm', fromBlock: 1, toBlock: 1 })
     ).rejects.toThrow('boom');
@@ -705,7 +705,7 @@ describe('PortalClient', () => {
     });
     const info = vi.fn();
     const fetchImpl = async () => jsonResponse({ number: 1, hash: '0xabc' });
-    const client = new PortalClient(cfg, { fetchImpl, logger: { info } });
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info, debug: vi.fn() } });
     await client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false);
     expect(info).toHaveBeenCalled();
   });
@@ -777,7 +777,7 @@ describe('PortalClient', () => {
       }
       return jsonResponse({ number: 1, hash: '0xabc' });
     };
-    const client = new PortalClient(cfg, { fetchImpl, logger: { info } });
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info, debug: vi.fn() } });
     await client.getMetadata('https://portal.sqd.dev/datasets/ethereum-mainnet');
     expect(info).toHaveBeenCalled();
   });
@@ -802,7 +802,7 @@ describe('PortalClient', () => {
       return new Response('boom', { status: 500 });
     };
     const warn = vi.fn();
-    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn } });
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn, debug: vi.fn() } });
     const baseUrl = 'https://portal.sqd.dev/datasets/ethereum-mainnet';
     const first = await client.getMetadata(baseUrl);
     const second = await client.getMetadata(baseUrl);
@@ -821,7 +821,7 @@ describe('PortalClient', () => {
       PORTAL_METADATA_TTL_MS: '0'
     });
     const warn = vi.fn();
-    const client = new PortalClient(cfg, { fetchImpl: async () => new Response(null, { status: 200 }), logger: { info: vi.fn(), warn } });
+    const client = new PortalClient(cfg, { fetchImpl: async () => new Response(null, { status: 200 }), logger: { info: vi.fn(), warn, debug: vi.fn() } });
     const baseUrl = 'https://portal.sqd.dev/datasets/ethereum-mainnet';
     (client as any).metadataCache.set(baseUrl, {
       data: { dataset: 'ethereum-mainnet', start_block: 9, real_time: true },
@@ -862,7 +862,7 @@ describe('PortalClient', () => {
       PORTAL_CIRCUIT_BREAKER_RESET_MS: '10000'
     });
     const fetchImpl = vi.fn().mockImplementation(() => new Response('boom', { status: 500 }));
-    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn() } });
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() } });
     await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow('server error');
     await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow('server error');
     await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow(
@@ -885,7 +885,7 @@ describe('PortalClient', () => {
       .fn()
       .mockResolvedValueOnce(new Response('boom', { status: 500 }))
       .mockResolvedValueOnce(jsonResponse({ number: 1, hash: '0xabc' }));
-    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn() } });
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() } });
     await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow('server error');
     await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow(
       'portal circuit open'
@@ -907,7 +907,7 @@ describe('PortalClient', () => {
       PORTAL_CIRCUIT_BREAKER_RESET_MS: '1'
     });
     const fetchImpl = vi.fn().mockImplementation(() => new Response('boom', { status: 500 }));
-    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn() } });
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() } });
     await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow('server error');
     await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow(
       'portal circuit open'

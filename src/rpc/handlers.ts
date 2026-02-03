@@ -16,7 +16,11 @@ export interface HandlerContext {
   chainId: number;
   traceparent?: string;
   requestId: string;
-  logger?: { info: (obj: Record<string, unknown>, msg: string) => void; warn?: (obj: Record<string, unknown>, msg: string) => void };
+  logger?: {
+    info: (obj: Record<string, unknown>, msg: string) => void;
+    warn?: (obj: Record<string, unknown>, msg: string) => void;
+    debug?: (obj: Record<string, unknown>, msg: string) => void;
+  };
   recordPortalHeaders?: (headers: { finalizedHeadNumber?: string; finalizedHeadHash?: string }) => void;
   upstream?: UpstreamRpcClient;
   requestCache?: Map<string, Promise<unknown>>;
@@ -30,7 +34,7 @@ export async function handleJsonRpc(
 ): Promise<{ response: JsonRpcResponse; httpStatus: number }> {
   const id = responseId(request);
   try {
-    ctx.logger?.info({ requestId: ctx.requestId, method: request.method, chainId: ctx.chainId }, 'rpc request');
+    ctx.logger?.debug?.({ method: request.method, chainId: ctx.chainId }, 'rpc request');
     const result = await dispatchWithCache(request, ctx);
     return { response: successResponse(id, result), httpStatus: 200 };
   } catch (err) {
@@ -43,7 +47,7 @@ export async function handleJsonRpc(
       const previousBlocks = rpcError.data?.previousBlocks;
       const previousBlocksCount = Array.isArray(previousBlocks) ? previousBlocks.length : 0;
       ctx.logger?.warn?.(
-        { requestId: ctx.requestId, method: request.method, chainId: ctx.chainId, previousBlocksCount },
+        { method: request.method, chainId: ctx.chainId, previousBlocksCount },
         'portal conflict'
       );
     }
@@ -299,13 +303,13 @@ async function handleGetLogs(request: JsonRpcRequest, ctx: HandlerContext): Prom
   if (range > ctx.config.maxLogBlockRange) {
     throw rangeTooLargeError(ctx.config.maxLogBlockRange);
   }
-  ctx.logger?.info(
-    { requestId: ctx.requestId, method: 'eth_getLogs', chainId: ctx.chainId, fromBlock, toBlock },
+  ctx.logger?.debug?.(
+    { method: 'eth_getLogs', chainId: ctx.chainId, fromBlock, toBlock },
     'rpc log range'
   );
   if (range > 10000) {
     ctx.logger?.warn?.(
-      { requestId: ctx.requestId, method: 'eth_getLogs', chainId: ctx.chainId, range },
+      { method: 'eth_getLogs', chainId: ctx.chainId, range },
       'large log range'
     );
   }
