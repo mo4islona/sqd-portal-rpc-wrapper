@@ -10,7 +10,7 @@ RUN npm prune --omit=dev
 FROM node:20-alpine
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=build /app/dist ./dist
+COPY --from=build /app/dist/src ./dist
 COPY --from=build /app/node_modules ./node_modules
 COPY package.json ./package.json
 EXPOSE 8080
