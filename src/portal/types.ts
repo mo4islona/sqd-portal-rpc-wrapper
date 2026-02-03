@@ -90,10 +90,10 @@ export interface PortalBlockHeader {
   extraData: string;
   mixHash: string;
   sha3Uncles: string;
-  withdrawalsRoot?: string;
+  // withdrawalsRoot?: string;
   blobGasUsed?: unknown;
   excessBlobGas?: unknown;
-  parentBeaconBlockRoot?: string;
+  // parentBeaconBlockRoot?: string;
 }
 
 export interface PortalTransaction {
@@ -221,10 +221,12 @@ const allBlockFields = {
   extraData: true,
   mixHash: true,
   sha3Uncles: true,
-  withdrawalsRoot: true,
+  // This is not available in Portal API
+  // withdrawalsRoot: true,
   blobGasUsed: true,
   excessBlobGas: true,
-  parentBeaconBlockRoot: true
+  // This is not available in Portal API
+  // parentBeaconBlockRoot: true
 };
 
 const txHashOnlyFields = {
