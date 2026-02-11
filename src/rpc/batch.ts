@@ -452,7 +452,6 @@ async function executeBlockSubBatch(
       ctx.traceparent, ctx.recordPortalHeaders, ctx.requestId
     );
   } catch (err) {
-    ctx.logger?.warn?.({ error: String(err) }, 'batch block stream failed');
     setStreamError(batch, results, String(err));
     return;
   }
@@ -518,7 +517,6 @@ async function executeTxByIndexSubBatch(
       ctx.traceparent, ctx.recordPortalHeaders, ctx.requestId
     );
   } catch (err) {
-    ctx.logger?.warn?.({ error: String(err) }, 'batch tx-by-index stream failed');
     setStreamError(batch, results, String(err));
     return;
   }
@@ -581,7 +579,6 @@ async function executeTraceSubBatch(
       ctx.traceparent, ctx.recordPortalHeaders, ctx.requestId
     );
   } catch (err) {
-    ctx.logger?.warn?.({ error: String(err) }, 'batch trace stream failed');
     setStreamError(batch, results, String(err));
     return;
   }
@@ -646,7 +643,6 @@ async function executeLogsSubBatch(
       ctx.traceparent, ctx.recordPortalHeaders, ctx.requestId
     );
   } catch (err) {
-    ctx.logger?.warn?.({ error: String(err) }, 'batch logs stream failed');
     const rpcError = serverError('internal error');
     results.set(batch.index, {
       response: errorResponse(responseId(batch.request), rpcError),

@@ -246,7 +246,6 @@ async function handleRpcRequest(
       });
 
       for (const batch of subBatches) {
-        console.log('Executing batch:', batch);
         switch (batch.kind) {
           case 'resolved':
             batchResults.set(batch.index, {
@@ -350,8 +349,6 @@ async function handleRpcRequest(
       if (!result) {
         continue;
       }
-
-      console.log(result)
 
       if (item.error) {
         // Parse error — always include in batch response
