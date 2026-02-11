@@ -1,11 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../src/config';
-import { coalesceBatchRequests } from '../src/rpc/batch';
 import type { ParsedJsonRpcItem } from '../src/jsonrpc';
-import { baseHeader, makePortal, makeTraceBlock } from './batch.helpers';
+import { baseHeader, makePortal, makeTraceBlock, splitAndExecute } from './batch.helpers';
 
-describe('coalesceBatchRequests (trace)', () => {
-  it('coalesces trace_block requests', async () => {
+describe('splitBatchRequests + executePortalSubBatch (trace)', () => {
+  it('coalesces contiguous trace_block requests', async () => {
     const config = loadConfig({
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
@@ -22,7 +21,7 @@ describe('coalesceBatchRequests (trace)', () => {
       { request: { jsonrpc: '2.0', id: 1, method: 'trace_block', params: ['0x5'] } },
       { request: { jsonrpc: '2.0', id: 2, method: 'trace_block', params: ['0x6'] } }
     ];
-    const results = await coalesceBatchRequests(items, {
+    const { results } = await splitAndExecute(items, {
       config,
       portal,
       chainId: 1,
@@ -56,7 +55,7 @@ describe('coalesceBatchRequests (trace)', () => {
     const items: ParsedJsonRpcItem[] = [
       { request: { jsonrpc: '2.0', id: 1, method: 'trace_block', params: ['finalized'] } }
     ];
-    const results = await coalesceBatchRequests(items, {
+    const { results } = await splitAndExecute(items, {
       config,
       portal,
       chainId: 1,
@@ -76,7 +75,7 @@ describe('coalesceBatchRequests (trace)', () => {
     const items: ParsedJsonRpcItem[] = [
       { request: { jsonrpc: '2.0', id: 1, method: 'trace_block', params: ['0xzz'] } }
     ];
-    const results = await coalesceBatchRequests(items, {
+    const { results } = await splitAndExecute(items, {
       config,
       portal,
       chainId: 1,
@@ -95,7 +94,7 @@ describe('coalesceBatchRequests (trace)', () => {
     const items: ParsedJsonRpcItem[] = [
       { request: { jsonrpc: '2.0', id: 1, method: 'trace_block', params: { bad: true } } }
     ];
-    const results = await coalesceBatchRequests(items, {
+    const { results } = await splitAndExecute(items, {
       config,
       portal,
       chainId: 1,
@@ -114,7 +113,7 @@ describe('coalesceBatchRequests (trace)', () => {
     const items: ParsedJsonRpcItem[] = [
       { request: { jsonrpc: '2.0', id: 1, method: 'trace_block', params: [] } }
     ];
-    const results = await coalesceBatchRequests(items, {
+    const { results } = await splitAndExecute(items, {
       config,
       portal,
       chainId: 1,
@@ -135,7 +134,7 @@ describe('coalesceBatchRequests (trace)', () => {
     const items: ParsedJsonRpcItem[] = [
       { request: { jsonrpc: '2.0', id: 1, method: 'trace_block', params: ['0x5'] } }
     ];
-    const results = await coalesceBatchRequests(items, {
+    const { results } = await splitAndExecute(items, {
       config,
       portal,
       chainId: 1,
@@ -145,7 +144,7 @@ describe('coalesceBatchRequests (trace)', () => {
     expect(traces).toEqual([]);
   });
 
-  it('skips trace_block pending', async () => {
+  it('sends pending trace_block to individual handling', async () => {
     const config = loadConfig({
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
@@ -155,16 +154,17 @@ describe('coalesceBatchRequests (trace)', () => {
     const items: ParsedJsonRpcItem[] = [
       { request: { jsonrpc: '2.0', id: 1, method: 'trace_block', params: ['pending'] } }
     ];
-    const results = await coalesceBatchRequests(items, {
+    const { subBatches } = await splitAndExecute(items, {
       config,
       portal,
       chainId: 1,
       requestId: 'req'
     });
-    expect(results.size).toBe(0);
+    expect(subBatches).toHaveLength(1);
+    expect(subBatches[0].kind).toBe('individual');
   });
 
-  it('skips trace_block blockHash', async () => {
+  it('sends trace_block with blockHash to individual handling', async () => {
     const config = loadConfig({
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
@@ -181,13 +181,14 @@ describe('coalesceBatchRequests (trace)', () => {
         }
       }
     ];
-    const results = await coalesceBatchRequests(items, {
+    const { subBatches } = await splitAndExecute(items, {
       config,
       portal,
       chainId: 1,
       requestId: 'req'
     });
-    expect(results.size).toBe(0);
+    expect(subBatches).toHaveLength(1);
+    expect(subBatches[0].kind).toBe('individual');
   });
 
   it('returns empty trace list when stream is missing block', async () => {
@@ -202,7 +203,7 @@ describe('coalesceBatchRequests (trace)', () => {
     const items: ParsedJsonRpcItem[] = [
       { request: { jsonrpc: '2.0', id: 1, method: 'trace_block', params: ['0x5'] } }
     ];
-    const results = await coalesceBatchRequests(items, {
+    const { results } = await splitAndExecute(items, {
       config,
       portal,
       chainId: 1,
@@ -224,7 +225,7 @@ describe('coalesceBatchRequests (trace)', () => {
     const items: ParsedJsonRpcItem[] = [
       { request: { jsonrpc: '2.0', id: 1, method: 'trace_block', params: ['0x5'] } }
     ];
-    const results = await coalesceBatchRequests(items, {
+    const { results } = await splitAndExecute(items, {
       config,
       portal,
       chainId: 1,
@@ -234,7 +235,7 @@ describe('coalesceBatchRequests (trace)', () => {
     expect(traces).toEqual([]);
   });
 
-  it('skips trace coalescing on stream error', async () => {
+  it('returns error for all items when trace stream fails', async () => {
     const config = loadConfig({
       SERVICE_MODE: 'single',
       PORTAL_DATASET: 'ethereum-mainnet',
@@ -249,14 +250,15 @@ describe('coalesceBatchRequests (trace)', () => {
     const items: ParsedJsonRpcItem[] = [
       { request: { jsonrpc: '2.0', id: 1, method: 'trace_block', params: ['0x5'] } }
     ];
-    const results = await coalesceBatchRequests(items, {
+    const { results } = await splitAndExecute(items, {
       config,
       portal,
       chainId: 1,
       requestId: 'req',
       logger: { warn }
     });
-    expect(results.size).toBe(0);
+    expect(results.size).toBe(1);
+    expect(results.get(0)?.response.error?.code).toBe(-32603);
     expect(warn).toHaveBeenCalled();
   });
 });

@@ -10,31 +10,39 @@ import {
   errorResponse
 } from '../jsonrpc';
 import { resolveDataset } from '../portal/mapping';
-import { parseBlockNumber, parseTransactionIndex } from './validation';
+import { parseBlockNumber, parseLogFilter, parseTransactionIndex, assertArray, assertObject } from './validation';
 import {
   allBlockFieldsSelection,
+  allLogFieldsSelection,
   allTraceFieldsSelection,
   allTransactionFieldsSelection,
   txHashOnlyFieldsSelection
 } from '../portal/types';
-import { convertBlockToRpc, convertTraceToRpc, convertTxToRpc } from './conversion';
-import { RpcError, invalidParams } from '../errors';
+import { convertBlockToRpc, convertLogToRpc, convertTraceToRpc, convertTxToRpc } from './conversion';
+import { RpcError, invalidParams, rangeTooLargeError, serverError } from '../errors';
 import { UpstreamRpcClient } from './upstream';
 import { fetchUncles } from './uncles';
 
-export interface CoalesceContext {
+// ---- Contexts ----
+
+export interface SplitContext {
   config: Config;
   portal: PortalClient;
-  upstream?: UpstreamRpcClient;
   chainId: number;
   traceparent?: string;
   requestId: string;
-  recordPortalHeaders?: (headers: PortalStreamHeaders) => void;
   logger?: {
     debug?: (obj: Record<string, unknown>, msg: string) => void;
-    warn?: (obj: Record<string, unknown>, msg: string) => void
+    warn?: (obj: Record<string, unknown>, msg: string) => void;
   };
 }
+
+export interface ExecuteContext extends SplitContext {
+  upstream?: UpstreamRpcClient;
+  recordPortalHeaders?: (headers: PortalStreamHeaders) => void;
+}
+
+// ---- Sub-batch types ----
 
 export interface CoalescedResponse {
   response: JsonRpcResponse;
@@ -42,487 +50,666 @@ export interface CoalescedResponse {
   durationMs: number;
 }
 
-interface BlockRequest {
+export interface ResolvedSubBatch {
+  kind: 'resolved';
   index: number;
-  request: JsonRpcRequest;
-  blockNumber: number;
+  response: CoalescedResponse;
+}
+
+export interface IndividualSubBatch {
+  kind: 'individual';
+  index: number;
+  item: ParsedJsonRpcItem;
+}
+
+export interface BlockSubBatch {
+  kind: 'blocks';
+  items: Array<{ index: number; request: JsonRpcRequest; blockNumber: number; fullTx: boolean }>;
   useFinalized: boolean;
+  fromBlock: number;
+  toBlock: number;
   fullTx: boolean;
 }
 
-interface TxRequest {
+export interface TxByIndexSubBatch {
+  kind: 'tx_by_index';
+  items: Array<{ index: number; request: JsonRpcRequest; blockNumber: number; txIndex: number }>;
+  useFinalized: boolean;
+  fromBlock: number;
+  toBlock: number;
+}
+
+export interface TraceSubBatch {
+  kind: 'traces';
+  items: Array<{ index: number; request: JsonRpcRequest; blockNumber: number }>;
+  useFinalized: boolean;
+  fromBlock: number;
+  toBlock: number;
+}
+
+export interface LogsSubBatch {
+  kind: 'logs';
   index: number;
   request: JsonRpcRequest;
-  blockNumber: number;
   useFinalized: boolean;
-  txIndex: number;
+  fromBlock: number;
+  toBlock: number;
+  logFilter: {
+    address?: string[];
+    topic0?: string[];
+    topic1?: string[];
+    topic2?: string[];
+    topic3?: string[];
+  };
 }
 
-interface TraceRequest {
-  index: number;
-  request: JsonRpcRequest;
-  blockNumber: number;
-  useFinalized: boolean;
-}
+export type PortalSubBatch = BlockSubBatch | TxByIndexSubBatch | TraceSubBatch | LogsSubBatch;
+export type SubBatch = ResolvedSubBatch | IndividualSubBatch | PortalSubBatch;
 
-interface BlockGroup {
-  useFinalized: boolean;
-  blockNumbers: Set<number>;
-  blockRequests: Map<number, BlockRequest[]>;
-  txRequests: Map<number, TxRequest[]>;
-  hasBlockRequests: boolean;
-  needsFullTx: boolean;
-}
+// ---- splitBatchRequests ----
 
-interface TraceGroup {
-  useFinalized: boolean;
-  blockNumbers: Set<number>;
-  traceRequests: Map<number, TraceRequest[]>;
-}
-
-export async function coalesceBatchRequests(
+export async function splitBatchRequests(
   items: ParsedJsonRpcItem[],
-  ctx: CoalesceContext
-): Promise<Map<number, CoalescedResponse>> {
-  const results = new Map<number, CoalescedResponse>();
+  ctx: SplitContext
+): Promise<SubBatch[]> {
   const dataset = resolveDataset(ctx.chainId, ctx.config);
   if (!dataset) {
-    return results;
+    return items.map((item, index) => ({ kind: 'individual' as const, index, item }));
   }
   const baseUrl = ctx.portal.buildDatasetBaseUrl(dataset);
+
   let startBlock: number | undefined;
   try {
     const metadata = await ctx.portal.getMetadata(baseUrl, ctx.traceparent, ctx.requestId);
     startBlock = typeof metadata.start_block === 'number' ? metadata.start_block : undefined;
   } catch (err) {
-    ctx.logger?.warn?.({ chainId: ctx.chainId, error: String(err) }, 'batch coalesce skipped (metadata)');
-    return results;
+    ctx.logger?.warn?.({ chainId: ctx.chainId, error: String(err) }, 'batch split skipped (metadata)');
+    return items.map((item, index) => ({ kind: 'individual' as const, index, item }));
   }
 
   const tagCache = new Map<string, { number: number; useFinalized: boolean }>();
-  const blockGroups = new Map<string, BlockGroup>();
-  const traceGroups = new Map<string, TraceGroup>();
+  const subBatches: SubBatch[] = [];
+  let currentPortal: PortalSubBatch | null = null;
+
+  function flush() {
+    if (currentPortal) {
+      subBatches.push(currentPortal);
+      currentPortal = null;
+    }
+  }
+
+  function pushResolved(index: number, response: CoalescedResponse) {
+    flush();
+    subBatches.push({ kind: 'resolved', index, response });
+  }
+
+  function pushIndividual(index: number, item: ParsedJsonRpcItem) {
+    flush();
+    subBatches.push({ kind: 'individual', index, item });
+  }
+
+  function pushError(index: number, request: JsonRpcRequest, err: RpcError) {
+    pushResolved(index, {
+      response: errorResponse(responseId(request), err),
+      httpStatus: err.httpStatus,
+      durationMs: 0
+    });
+  }
 
   for (const [index, item] of items.entries()) {
-    const request = item.request;
-    if (!request) {
+    if (item.error) {
+      pushResolved(index, { response: item.error, httpStatus: 400, durationMs: 0 });
       continue;
     }
+
+    const request = item.request!;
+
     switch (request.method) {
       case 'eth_getBlockByNumber': {
         if (!Array.isArray(request.params)) {
-          const err = invalidParams('invalid params for eth_getBlockByNumber');
-          results.set(index, {
-            response: errorResponse(responseId(request), err),
-            httpStatus: err.httpStatus,
-            durationMs: 0
-          });
+          pushError(index, request, invalidParams('invalid params for eth_getBlockByNumber'));
           continue;
         }
         if (request.params.length < 1) {
-          const err = invalidParams('invalid params');
-          results.set(index, {
-            response: errorResponse(responseId(request), err),
-            httpStatus: err.httpStatus,
-            durationMs: 0
-          });
+          pushError(index, request, invalidParams('invalid params'));
           continue;
         }
         if (request.params[0] === 'pending') {
+          pushIndividual(index, item);
           continue;
         }
         let fullTx = false;
         if (request.params.length > 1) {
           if (typeof request.params[1] !== 'boolean') {
-            const err = invalidParams('invalid params');
-            results.set(index, {
-              response: errorResponse(responseId(request), err),
-              httpStatus: err.httpStatus,
-              durationMs: 0
-            });
+            pushError(index, request, invalidParams('invalid params'));
             continue;
           }
           fullTx = request.params[1];
         }
-        const blockTag = await readBlockTag(request.params[0], ctx, baseUrl, tagCache, results, index, request);
-        if (!blockTag) {
+        let blockTag: { number: number; useFinalized: boolean };
+        try {
+          blockTag = await readBlockTag(request.params[0], ctx, baseUrl, tagCache);
+        } catch (err) {
+          const rpcError = err instanceof RpcError ? err : invalidParams('invalid block number');
+          pushError(index, request, rpcError);
           continue;
         }
-        if (startBlock !== undefined && blockTag.number < startBlock) {
-          results.set(index, { response: successResponse(responseId(request), null), httpStatus: 200, durationMs: 0 });
-          continue;
+
+        if (
+          currentPortal &&
+          currentPortal.kind === 'blocks' &&
+          currentPortal.fullTx === fullTx &&
+          currentPortal.useFinalized === blockTag.useFinalized &&
+          blockTag.number === currentPortal.toBlock + 1
+        ) {
+          currentPortal.items.push({ index, request, blockNumber: blockTag.number, fullTx });
+          currentPortal.toBlock = blockTag.number;
+        } else {
+          flush();
+          currentPortal = {
+            kind: 'blocks',
+            items: [{ index, request, blockNumber: blockTag.number, fullTx }],
+            useFinalized: blockTag.useFinalized,
+            fromBlock: blockTag.number,
+            toBlock: blockTag.number,
+            fullTx
+          };
         }
-        const group = ensureBlockGroup(blockGroups, blockTag.useFinalized);
-        group.hasBlockRequests = true;
-        group.needsFullTx = group.needsFullTx || fullTx;
-        group.blockNumbers.add(blockTag.number);
-        const list = group.blockRequests.get(blockTag.number) ?? [];
-        list.push({ index, request, blockNumber: blockTag.number, useFinalized: blockTag.useFinalized, fullTx });
-        group.blockRequests.set(blockTag.number, list);
         continue;
       }
+
       case 'eth_getTransactionByBlockNumberAndIndex': {
         if (!Array.isArray(request.params)) {
-          const err = invalidParams('invalid params for eth_getTransactionByBlockNumberAndIndex');
-          results.set(index, {
-            response: errorResponse(responseId(request), err),
-            httpStatus: err.httpStatus,
-            durationMs: 0
-          });
+          pushError(index, request, invalidParams('invalid params for eth_getTransactionByBlockNumberAndIndex'));
           continue;
         }
         if (request.params.length < 2) {
-          const err = invalidParams('invalid params');
-          results.set(index, {
-            response: errorResponse(responseId(request), err),
-            httpStatus: err.httpStatus,
-            durationMs: 0
-          });
+          pushError(index, request, invalidParams('invalid params'));
           continue;
         }
         if (request.params[0] === 'pending') {
+          pushIndividual(index, item);
           continue;
         }
-        const blockTag = await readBlockTag(request.params[0], ctx, baseUrl, tagCache, results, index, request);
-        if (!blockTag) {
+        let blockTag: { number: number; useFinalized: boolean };
+        try {
+          blockTag = await readBlockTag(request.params[0], ctx, baseUrl, tagCache);
+        } catch (err) {
+          const rpcError = err instanceof RpcError ? err : invalidParams('invalid block number');
+          pushError(index, request, rpcError);
           continue;
         }
         if (startBlock !== undefined && blockTag.number < startBlock) {
-          results.set(index, { response: successResponse(responseId(request), null), httpStatus: 200, durationMs: 0 });
+          pushResolved(index, { response: successResponse(responseId(request), null), httpStatus: 200, durationMs: 0 });
           continue;
         }
         let txIndex: number;
         try {
           txIndex = parseTransactionIndex(request.params[1]);
         } catch {
-          const rpcError = invalidParams('invalid transaction index');
-          results.set(index, {
-            response: errorResponse(responseId(request), rpcError),
-            httpStatus: rpcError.httpStatus,
-            durationMs: 0
-          });
+          pushError(index, request, invalidParams('invalid transaction index'));
           continue;
         }
-        const group = ensureBlockGroup(blockGroups, blockTag.useFinalized);
-        group.needsFullTx = true;
-        group.blockNumbers.add(blockTag.number);
-        const list = group.txRequests.get(blockTag.number) ?? [];
-        list.push({ index, request, blockNumber: blockTag.number, useFinalized: blockTag.useFinalized, txIndex });
-        group.txRequests.set(blockTag.number, list);
+        if (
+          currentPortal &&
+          currentPortal.kind === 'tx_by_index' &&
+          currentPortal.useFinalized === blockTag.useFinalized &&
+          blockTag.number === currentPortal.toBlock + 1
+        ) {
+          currentPortal.items.push({ index, request, blockNumber: blockTag.number, txIndex });
+          currentPortal.toBlock = blockTag.number;
+        } else {
+          flush();
+          currentPortal = {
+            kind: 'tx_by_index',
+            items: [{ index, request, blockNumber: blockTag.number, txIndex }],
+            useFinalized: blockTag.useFinalized,
+            fromBlock: blockTag.number,
+            toBlock: blockTag.number
+          };
+        }
         continue;
       }
+
       case 'trace_block': {
         if (!Array.isArray(request.params)) {
-          const err = invalidParams('invalid params for trace_block');
-          results.set(index, {
-            response: errorResponse(responseId(request), err),
-            httpStatus: err.httpStatus,
-            durationMs: 0
-          });
+          pushError(index, request, invalidParams('invalid params for trace_block'));
           continue;
         }
         if (request.params.length < 1) {
-          const err = invalidParams('invalid params');
-          results.set(index, {
-            response: errorResponse(responseId(request), err),
-            httpStatus: err.httpStatus,
-            durationMs: 0
-          });
+          pushError(index, request, invalidParams('invalid params'));
           continue;
         }
         if (request.params[0] === 'pending') {
+          pushIndividual(index, item);
           continue;
         }
         if (isHashParam(request.params[0])) {
+          pushIndividual(index, item);
           continue;
         }
-        const blockTag = await readBlockTag(request.params[0], ctx, baseUrl, tagCache, results, index, request);
-        if (!blockTag) {
+        let blockTag: { number: number; useFinalized: boolean };
+        try {
+          blockTag = await readBlockTag(request.params[0], ctx, baseUrl, tagCache);
+        } catch (err) {
+          const rpcError = err instanceof RpcError ? err : invalidParams('invalid block number');
+          pushError(index, request, rpcError);
           continue;
         }
         if (startBlock !== undefined && blockTag.number < startBlock) {
-          results.set(index, { response: successResponse(responseId(request), []), httpStatus: 200, durationMs: 0 });
+          pushResolved(index, { response: successResponse(responseId(request), []), httpStatus: 200, durationMs: 0 });
           continue;
         }
-        const group = ensureTraceGroup(traceGroups, blockTag.useFinalized);
-        group.blockNumbers.add(blockTag.number);
-        const list = group.traceRequests.get(blockTag.number) ?? [];
-        list.push({ index, request, blockNumber: blockTag.number, useFinalized: blockTag.useFinalized });
-        group.traceRequests.set(blockTag.number, list);
+        if (
+          currentPortal &&
+          currentPortal.kind === 'traces' &&
+          currentPortal.useFinalized === blockTag.useFinalized &&
+          blockTag.number === currentPortal.toBlock + 1
+        ) {
+          currentPortal.items.push({ index, request, blockNumber: blockTag.number });
+          currentPortal.toBlock = blockTag.number;
+        } else {
+          flush();
+          currentPortal = {
+            kind: 'traces',
+            items: [{ index, request, blockNumber: blockTag.number }],
+            useFinalized: blockTag.useFinalized,
+            fromBlock: blockTag.number,
+            toBlock: blockTag.number
+          };
+        }
         continue;
       }
-      default:
-        break;
+
+      case 'eth_getLogs': {
+        try {
+          assertArray(request.params, 'invalid params for eth_getLogs');
+          if (request.params.length < 1) {
+            throw invalidParams('invalid params');
+          }
+          assertObject(request.params[0], 'invalid filter object');
+        } catch (err) {
+          const rpcError = err instanceof RpcError ? err : invalidParams('invalid params');
+          pushError(index, request, rpcError);
+          continue;
+        }
+
+        let parsed: Awaited<ReturnType<typeof parseLogFilter>>;
+        try {
+          parsed = await parseLogFilter(ctx.portal, baseUrl, request.params[0] as Record<string, unknown>, ctx.config, ctx.traceparent, ctx.requestId);
+        } catch (err) {
+          const rpcError = err instanceof RpcError ? err : invalidParams('invalid params');
+          pushError(index, request, rpcError);
+          continue;
+        }
+
+        if ('blockHash' in parsed) {
+          pushIndividual(index, item);
+          continue;
+        }
+
+        let { fromBlock } = parsed;
+        const { toBlock, useFinalized, logFilter } = parsed;
+        if (startBlock !== undefined) {
+          if (toBlock < startBlock) {
+            pushResolved(index, { response: successResponse(responseId(request), []), httpStatus: 200, durationMs: 0 });
+            continue;
+          }
+          if (fromBlock < startBlock) {
+            fromBlock = startBlock;
+          }
+        }
+
+        const range = toBlock - fromBlock + 1;
+        if (range > ctx.config.maxLogBlockRange) {
+          pushError(index, request, rangeTooLargeError(ctx.config.maxLogBlockRange));
+          continue;
+        }
+
+        flush();
+        subBatches.push({
+          kind: 'logs',
+          index,
+          request,
+          useFinalized,
+          fromBlock,
+          toBlock,
+          logFilter
+        });
+        continue;
+      }
+
+      default: {
+        pushIndividual(index, item);
+        continue;
+      }
     }
   }
 
-  await coalesceBlockGroups(blockGroups, ctx, baseUrl, results);
-  await coalesceTraceGroups(traceGroups, ctx, baseUrl, results);
+  flush();
+  return subBatches;
+}
 
+// ---- executePortalSubBatch ----
+
+export async function executePortalSubBatch(
+  batch: PortalSubBatch,
+  ctx: ExecuteContext
+): Promise<Map<number, CoalescedResponse>> {
+  const results = new Map<number, CoalescedResponse>();
+  const dataset = resolveDataset(ctx.chainId, ctx.config);
+  if (!dataset) {
+    return setStreamError(batch, results, 'dataset not found');
+  }
+  const baseUrl = ctx.portal.buildDatasetBaseUrl(dataset);
+
+  switch (batch.kind) {
+    case 'blocks':
+      await executeBlockSubBatch(batch, ctx, baseUrl, results);
+      break;
+    case 'tx_by_index':
+      await executeTxByIndexSubBatch(batch, ctx, baseUrl, results);
+      break;
+    case 'traces':
+      await executeTraceSubBatch(batch, ctx, baseUrl, results);
+      break;
+    case 'logs':
+      await executeLogsSubBatch(batch, ctx, baseUrl, results);
+      break;
+  }
+
+  return results;
+}
+
+// ---- Block execution ----
+
+async function executeBlockSubBatch(
+  batch: BlockSubBatch,
+  ctx: ExecuteContext,
+  baseUrl: string,
+  results: Map<number, CoalescedResponse>
+): Promise<void> {
+  const portalReq = {
+    type: 'evm' as const,
+    fromBlock: batch.fromBlock,
+    toBlock: batch.toBlock,
+    includeAllBlocks: ctx.config.portalIncludeAllBlocks || undefined,
+    fields: {
+      block: allBlockFieldsSelection(),
+      transaction: batch.fullTx ? allTransactionFieldsSelection() : txHashOnlyFieldsSelection()
+    },
+    transactions: [{}]
+  };
+
+  let blocks: Awaited<ReturnType<PortalClient['streamBlocks']>>;
+  const started = performance.now();
+
+  ctx.logger?.debug?.({ fromBlock: batch.fromBlock, toBlock: batch.toBlock }, 'streaming blocks for batch');
+
+  try {
+    blocks = await ctx.portal.streamBlocks(
+      baseUrl, batch.useFinalized, portalReq,
+      ctx.traceparent, ctx.recordPortalHeaders, ctx.requestId
+    );
+  } catch (err) {
+    ctx.logger?.warn?.({ error: String(err) }, 'batch block stream failed');
+    setStreamError(batch, results, String(err));
+    return;
+  }
+
+  const durationMs = performance.now() - started;
+  const byNumber = new Map<number, (typeof blocks)[number]>();
+  for (const block of blocks) {
+    byNumber.set(block.header.number, block);
+  }
+
+  for (const item of batch.items) {
+    const block = byNumber.get(item.blockNumber);
+    if (!block) {
+      results.set(item.index, {
+        response: successResponse(responseId(item.request), null),
+        httpStatus: 200,
+        durationMs
+      });
+      continue;
+    }
+
+    const uncles = await fetchUncles(
+      { config: ctx.config, upstream: ctx.upstream, chainId: ctx.chainId, traceparent: ctx.traceparent, requestId: ctx.requestId, logger: ctx.logger },
+      item.blockNumber
+    );
+    const result = convertBlockToRpc(block, item.fullTx, uncles);
+    results.set(item.index, {
+      response: successResponse(responseId(item.request), result),
+      httpStatus: 200,
+      durationMs
+    });
+  }
+}
+
+// ---- TxByIndex execution ----
+
+async function executeTxByIndexSubBatch(
+  batch: TxByIndexSubBatch,
+  ctx: ExecuteContext,
+  baseUrl: string,
+  results: Map<number, CoalescedResponse>
+): Promise<void> {
+  const portalReq = {
+    type: 'evm' as const,
+    fromBlock: batch.fromBlock,
+    toBlock: batch.toBlock,
+    includeAllBlocks: ctx.config.portalIncludeAllBlocks || undefined,
+    fields: {
+      block: { number: true, hash: true, parentHash: true, timestamp: true },
+      transaction: allTransactionFieldsSelection()
+    },
+    transactions: [{}]
+  };
+
+  let blocks: Awaited<ReturnType<PortalClient['streamBlocks']>>;
+  const started = performance.now();
+
+  ctx.logger?.debug?.({ fromBlock: batch.fromBlock, toBlock: batch.toBlock }, 'streaming blocks for tx-by-index batch');
+
+  try {
+    blocks = await ctx.portal.streamBlocks(
+      baseUrl, batch.useFinalized, portalReq,
+      ctx.traceparent, ctx.recordPortalHeaders, ctx.requestId
+    );
+  } catch (err) {
+    ctx.logger?.warn?.({ error: String(err) }, 'batch tx-by-index stream failed');
+    setStreamError(batch, results, String(err));
+    return;
+  }
+
+  const durationMs = performance.now() - started;
+  const byNumber = new Map<number, (typeof blocks)[number]>();
+  for (const block of blocks) {
+    byNumber.set(block.header.number, block);
+  }
+
+  for (const item of batch.items) {
+    const block = byNumber.get(item.blockNumber);
+    if (!block) {
+      results.set(item.index, {
+        response: successResponse(responseId(item.request), null),
+        httpStatus: 200,
+        durationMs
+      });
+      continue;
+    }
+    const txResult = findTransactionByIndex(block, item.txIndex);
+    results.set(item.index, {
+      response: successResponse(responseId(item.request), txResult),
+      httpStatus: 200,
+      durationMs
+    });
+  }
+}
+
+// ---- Trace execution ----
+
+async function executeTraceSubBatch(
+  batch: TraceSubBatch,
+  ctx: ExecuteContext,
+  baseUrl: string,
+  results: Map<number, CoalescedResponse>
+): Promise<void> {
+  const portalReq = {
+    type: 'evm' as const,
+    fromBlock: batch.fromBlock,
+    toBlock: batch.toBlock,
+    includeAllBlocks: ctx.config.portalIncludeAllBlocks || undefined,
+    fields: {
+      block: { number: true, hash: true },
+      transaction: txHashOnlyFieldsSelection(),
+      trace: allTraceFieldsSelection()
+    },
+    traces: [{}],
+    transactions: [{}]
+  };
+
+  let blocks: Awaited<ReturnType<PortalClient['streamBlocks']>>;
+  const started = performance.now();
+
+  ctx.logger?.debug?.({ fromBlock: batch.fromBlock, toBlock: batch.toBlock }, 'streaming blocks for trace batch');
+
+  try {
+    blocks = await ctx.portal.streamBlocks(
+      baseUrl, batch.useFinalized, portalReq,
+      ctx.traceparent, ctx.recordPortalHeaders, ctx.requestId
+    );
+  } catch (err) {
+    ctx.logger?.warn?.({ error: String(err) }, 'batch trace stream failed');
+    setStreamError(batch, results, String(err));
+    return;
+  }
+
+  const durationMs = performance.now() - started;
+  const byNumber = new Map<number, (typeof blocks)[number]>();
+  for (const block of blocks) {
+    byNumber.set(block.header.number, block);
+  }
+
+  for (const item of batch.items) {
+    const block = byNumber.get(item.blockNumber);
+    if (!block) {
+      results.set(item.index, {
+        response: successResponse(responseId(item.request), []),
+        httpStatus: 200,
+        durationMs
+      });
+      continue;
+    }
+    const txHashByIndex: Record<number, string> = {};
+    for (const tx of block.transactions || []) {
+      txHashByIndex[tx.transactionIndex] = tx.hash;
+    }
+    const traces = (block.traces || []).map((trace) => convertTraceToRpc(trace, block.header, txHashByIndex));
+    results.set(item.index, {
+      response: successResponse(responseId(item.request), traces),
+      httpStatus: 200,
+      durationMs
+    });
+  }
+}
+
+// ---- Logs execution ----
+
+async function executeLogsSubBatch(
+  batch: LogsSubBatch,
+  ctx: ExecuteContext,
+  baseUrl: string,
+  results: Map<number, CoalescedResponse>
+): Promise<void> {
+  const portalReq = {
+    type: 'evm' as const,
+    fromBlock: batch.fromBlock,
+    toBlock: batch.toBlock,
+    includeAllBlocks: ctx.config.portalIncludeAllBlocks || undefined,
+    fields: {
+      block: { number: true, hash: true },
+      log: allLogFieldsSelection()
+    },
+    logs: [batch.logFilter]
+  };
+
+  let blocks: Awaited<ReturnType<PortalClient['streamBlocks']>>;
+  const started = performance.now();
+
+  ctx.logger?.debug?.({ fromBlock: batch.fromBlock, toBlock: batch.toBlock }, 'streaming blocks for logs batch');
+
+  try {
+    blocks = await ctx.portal.streamBlocks(
+      baseUrl, batch.useFinalized, portalReq,
+      ctx.traceparent, ctx.recordPortalHeaders, ctx.requestId
+    );
+  } catch (err) {
+    ctx.logger?.warn?.({ error: String(err) }, 'batch logs stream failed');
+    const rpcError = serverError('internal error');
+    results.set(batch.index, {
+      response: errorResponse(responseId(batch.request), rpcError),
+      httpStatus: rpcError.httpStatus,
+      durationMs: 0
+    });
+    return;
+  }
+
+  const durationMs = performance.now() - started;
+  const logs: Record<string, unknown>[] = [];
+  for (const block of blocks) {
+    for (const log of block.logs || []) {
+      logs.push(convertLogToRpc(log, block));
+    }
+  }
+  results.set(batch.index, {
+    response: successResponse(responseId(batch.request), logs),
+    httpStatus: 200,
+    durationMs
+  });
+}
+
+// ---- Helpers ----
+
+function setStreamError(
+  batch: PortalSubBatch,
+  results: Map<number, CoalescedResponse>,
+  _errorMsg: string
+): Map<number, CoalescedResponse> {
+  const rpcError = serverError('internal error');
+  if (batch.kind === 'logs') {
+    results.set(batch.index, {
+      response: errorResponse(responseId(batch.request), rpcError),
+      httpStatus: rpcError.httpStatus,
+      durationMs: 0
+    });
+  } else {
+    for (const item of batch.items) {
+      results.set(item.index, {
+        response: errorResponse(responseId(item.request), rpcError),
+        httpStatus: rpcError.httpStatus,
+        durationMs: 0
+      });
+    }
+  }
   return results;
 }
 
 async function readBlockTag(
   value: unknown,
-  ctx: CoalesceContext,
+  ctx: SplitContext,
   baseUrl: string,
-  cache: Map<string, { number: number; useFinalized: boolean }>,
-  results: Map<number, CoalescedResponse>,
-  index: number,
-  request: JsonRpcRequest
-): Promise<{ number: number; useFinalized: boolean } | undefined> {
+  cache: Map<string, { number: number; useFinalized: boolean }>
+): Promise<{ number: number; useFinalized: boolean }> {
   const cacheKey = typeof value === 'string' ? `s:${value}` : `n:${value}`;
-  try {
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
-    const blockTag = await parseBlockNumber(ctx.portal, baseUrl, value, ctx.config, ctx.traceparent, ctx.requestId);
-    cache.set(cacheKey, blockTag);
-    return blockTag;
-  } catch (err) {
-    const rpcError = err instanceof RpcError ? err : invalidParams('invalid block number');
-    results.set(index, {
-      response: errorResponse(responseId(request), rpcError),
-      httpStatus: rpcError.httpStatus,
-      durationMs: 0
-    });
-    return undefined;
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    return cached;
   }
-}
-
-function ensureBlockGroup(groups: Map<string, BlockGroup>, useFinalized: boolean): BlockGroup {
-  const key = useFinalized ? 'finalized' : 'head';
-  const existing = groups.get(key);
-  if (existing) {
-    return existing;
-  }
-  const group: BlockGroup = {
-    useFinalized,
-    blockNumbers: new Set<number>(),
-    blockRequests: new Map<number, BlockRequest[]>(),
-    txRequests: new Map<number, TxRequest[]>(),
-    hasBlockRequests: false,
-    needsFullTx: false
-  };
-  groups.set(key, group);
-  return group;
-}
-
-function ensureTraceGroup(groups: Map<string, TraceGroup>, useFinalized: boolean): TraceGroup {
-  const key = useFinalized ? 'finalized' : 'head';
-  const existing = groups.get(key);
-  if (existing) {
-    return existing;
-  }
-  const group: TraceGroup = {
-    useFinalized,
-    blockNumbers: new Set<number>(),
-    traceRequests: new Map<number, TraceRequest[]>()
-  };
-  groups.set(key, group);
-  return group;
-}
-
-async function coalesceBlockGroups(
-  groups: Map<string, BlockGroup>,
-  ctx: CoalesceContext,
-  baseUrl: string,
-  results: Map<number, CoalescedResponse>
-): Promise<void> {
-  for (const group of groups.values()) {
-    const segments = buildSegments([...group.blockNumbers]);
-    for (const segment of segments) {
-      const fromBlock = segment[0];
-      const toBlock = segment[segment.length - 1];
-      const portalReq = {
-        type: 'evm' as const,
-        fromBlock,
-        toBlock,
-        includeAllBlocks: ctx.config.portalIncludeAllBlocks || undefined,
-        fields: {
-          block: group.hasBlockRequests
-            ? allBlockFieldsSelection()
-            : { number: true, hash: true, parentHash: true, timestamp: true },
-          transaction: group.needsFullTx ? allTransactionFieldsSelection() : txHashOnlyFieldsSelection()
-        },
-        transactions: [{}]
-      };
-
-      let blocks: Awaited<ReturnType<PortalClient['streamBlocks']>>;
-      const started = performance.now();
-
-      ctx.logger?.debug?.({ fromBlock, toBlock, request: portalReq }, 'streaming blocks from portal for batch coalescing');
-
-      try {
-        blocks = await ctx.portal.streamBlocks(
-          baseUrl,
-          group.useFinalized,
-          portalReq,
-          ctx.traceparent,
-          ctx.recordPortalHeaders,
-          ctx.requestId
-        );
-      } catch (err) {
-        ctx.logger?.warn?.({ error: String(err) }, 'batch coalesce skipped (stream)');
-        continue;
-      }
-      const durationMs = performance.now() - started;
-      const byNumber = new Map<number, (typeof blocks)[number]>();
-      for (const block of blocks) {
-        byNumber.set(block.header.number, block);
-      }
-
-      for (const blockNumber of segment) {
-        const block = byNumber.get(blockNumber);
-        const blockRequests = group.blockRequests.get(blockNumber) ?? [];
-        const txRequests = group.txRequests.get(blockNumber) ?? [];
-        if (!block) {
-          for (const req of blockRequests) {
-            results.set(req.index, {
-              response: successResponse(responseId(req.request), null),
-              httpStatus: 200,
-              durationMs
-            });
-          }
-          for (const req of txRequests) {
-            results.set(req.index, {
-              response: successResponse(responseId(req.request), null),
-              httpStatus: 200,
-              durationMs
-            });
-          }
-          continue;
-        }
-
-        let uncles: string[] | undefined;
-        if (blockRequests.length > 0) {
-          uncles = await fetchUncles(
-            {
-              config: ctx.config,
-              upstream: ctx.upstream,
-              chainId: ctx.chainId,
-              traceparent: ctx.traceparent,
-              requestId: ctx.requestId,
-              logger: ctx.logger
-            },
-            blockNumber
-          );
-        }
-
-        for (const req of blockRequests) {
-          const result = convertBlockToRpc(block, req.fullTx, uncles);
-          results.set(req.index, {
-            response: successResponse(responseId(req.request), result),
-            httpStatus: 200,
-            durationMs
-          });
-        }
-
-        for (const req of txRequests) {
-          const txResult = findTransactionByIndex(block, req.txIndex);
-          results.set(req.index, {
-            response: successResponse(responseId(req.request), txResult),
-            httpStatus: 200,
-            durationMs
-          });
-        }
-      }
-    }
-  }
-}
-
-async function coalesceTraceGroups(
-  groups: Map<string, TraceGroup>,
-  ctx: CoalesceContext,
-  baseUrl: string,
-  results: Map<number, CoalescedResponse>
-): Promise<void> {
-  for (const group of groups.values()) {
-    const segments = buildSegments([...group.blockNumbers]);
-    for (const segment of segments) {
-      const fromBlock = segment[0];
-      const toBlock = segment[segment.length - 1];
-      const portalReq = {
-        type: 'evm' as const,
-        fromBlock,
-        toBlock,
-        includeAllBlocks: ctx.config.portalIncludeAllBlocks || undefined,
-        fields: {
-          block: { number: true, hash: true },
-          transaction: txHashOnlyFieldsSelection(),
-          trace: allTraceFieldsSelection()
-        },
-        traces: [{}],
-        transactions: [{}]
-      };
-      let blocks: Awaited<ReturnType<PortalClient['streamBlocks']>>;
-      const started = performance.now();
-      try {
-        blocks = await ctx.portal.streamBlocks(
-          baseUrl,
-          group.useFinalized,
-          portalReq,
-          ctx.traceparent,
-          ctx.recordPortalHeaders,
-          ctx.requestId
-        );
-      } catch (err) {
-        ctx.logger?.warn?.({ error: String(err) }, 'batch coalesce skipped (trace stream)');
-        continue;
-      }
-      const durationMs = performance.now() - started;
-      const byNumber = new Map<number, (typeof blocks)[number]>();
-      for (const block of blocks) {
-        byNumber.set(block.header.number, block);
-      }
-
-      for (const blockNumber of segment) {
-        const block = byNumber.get(blockNumber);
-        const traceRequests = group.traceRequests.get(blockNumber)!;
-        if (!block) {
-          for (const req of traceRequests) {
-            results.set(req.index, {
-              response: successResponse(responseId(req.request), []),
-              httpStatus: 200,
-              durationMs
-            });
-          }
-          continue;
-        }
-        const txHashByIndex: Record<number, string> = {};
-        for (const tx of block.transactions || []) {
-          txHashByIndex[tx.transactionIndex] = tx.hash;
-        }
-        const traces = (block.traces || []).map((trace) => convertTraceToRpc(trace, block.header, txHashByIndex));
-        for (const req of traceRequests) {
-          results.set(req.index, {
-            response: successResponse(responseId(req.request), traces),
-            httpStatus: 200,
-            durationMs
-          });
-        }
-      }
-    }
-  }
-}
-
-function buildSegments(numbers: number[]): number[][] {
-  const sorted = numbers.slice().sort((a, b) => a - b);
-  const segments: number[][] = [];
-  let current: number[] = [sorted[0]];
-  for (let i = 1; i < sorted.length; i += 1) {
-    const value = sorted[i];
-    const prev = current[current.length - 1];
-    if (value === prev + 1) {
-      current.push(value);
-    } else {
-      segments.push(current);
-      current = [value];
-    }
-  }
-  segments.push(current);
-  return segments;
+  const blockTag = await parseBlockNumber(ctx.portal, baseUrl, value, ctx.config, ctx.traceparent, ctx.requestId);
+  cache.set(cacheKey, blockTag);
+  return blockTag;
 }
 
 function findTransactionByIndex(

@@ -1,4 +1,13 @@
 import type { PortalClient } from '../src/portal/client';
+import type { ParsedJsonRpcItem } from '../src/jsonrpc';
+import {
+  splitBatchRequests,
+  executePortalSubBatch,
+  type SplitContext,
+  type ExecuteContext,
+  type CoalescedResponse,
+  type SubBatch
+} from '../src/rpc/batch';
 
 export const baseHeader = (number: number) => ({
   number,
@@ -62,4 +71,40 @@ export function makePortal(overrides: Record<string, unknown> = {}): PortalClien
     fetchHead: async () => ({ head: { number: 5, hash: '0x' + '11'.repeat(32) }, finalizedAvailable: true }),
     ...overrides
   } as unknown as PortalClient;
+}
+
+/**
+ * Convenience wrapper: splits batch items into sub-batches and executes all portal sub-batches.
+ * Returns a flat Map<index, CoalescedResponse> for portal + resolved results.
+ * Individual sub-batches are NOT executed (they would need handleJsonRpc).
+ */
+export async function splitAndExecute(
+  items: ParsedJsonRpcItem[],
+  ctx: ExecuteContext & SplitContext
+): Promise<{ results: Map<number, CoalescedResponse>; subBatches: SubBatch[] }> {
+  const subBatches = await splitBatchRequests(items, ctx);
+  const results = new Map<number, CoalescedResponse>();
+
+  for (const batch of subBatches) {
+    switch (batch.kind) {
+      case 'resolved':
+        results.set(batch.index, batch.response);
+        break;
+      case 'blocks':
+      case 'tx_by_index':
+      case 'traces':
+      case 'logs': {
+        const portalResults = await executePortalSubBatch(batch, ctx);
+        for (const [idx, r] of portalResults) {
+          results.set(idx, r);
+        }
+        break;
+      }
+      case 'individual':
+        // Not executed — tests can check subBatches for these
+        break;
+    }
+  }
+
+  return { results, subBatches };
 }

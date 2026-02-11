@@ -110,7 +110,10 @@ export class PortalClient {
         this.logger?.warn?.({ endpoint, status }, 'finalized head not found, fallback to non-finalized');
         return this.fetchHead(baseUrl, false, traceparent, requestId);
       }
-      this.logger?.warn?.({ endpoint, error: err instanceof Error ? err.message : String(err) }, 'portal error');
+      this.logger?.warn?.({
+        endpoint,
+        error: err instanceof Error ? err.message : String(err)
+      }, 'portal error');
       throw mapPortalError(err);
     }
   }

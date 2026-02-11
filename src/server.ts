@@ -9,7 +9,7 @@ import type { PortalStreamHeaders } from './portal/client';
 import { normalizePortalBaseUrl, PortalClient } from './portal/client';
 import { JsonRpcResponse, parseJsonRpcPayload } from './jsonrpc';
 import { handleJsonRpc } from './rpc/handlers';
-import { coalesceBatchRequests } from './rpc/batch';
+import { splitBatchRequests, executePortalSubBatch } from './rpc/batch';
 import { UpstreamRpcClient } from './rpc/upstream';
 import { ConcurrencyLimiter } from './util/concurrency';
 import {
@@ -167,9 +167,8 @@ export async function buildServer(config: Config, options?: BuildServerOptions):
     }
     const params = req.params as { chainId?: string };
     const chainId = extractChainId(params.chainId);
-    if (chainId === null) {
-      return replyInvalidChainId(reply);
-    }
+    if (chainId === null) return replyInvalidChainId(reply);
+
     return handleRpcRequest(req, reply, config, portal, upstream, limiter, chainId);
   });
 
@@ -232,41 +231,95 @@ async function handleRpcRequest(
 
     const responses: JsonRpcResponse[] = [];
     let maxStatus = 200;
-    const coalesced = parsed.isBatch
-      ? await coalesceBatchRequests(parsed.items, {
-          config,
-          portal,
-          upstream,
-          chainId,
-          traceparent,
-          requestId: req.id,
-          recordPortalHeaders,
-          logger: req.log
-        })
-      : new Map();
 
-    for (const [index, item] of parsed.items.entries()) {
-      if (item.error) {
-        responses.push(item.error);
-        maxStatus = Math.max(maxStatus, 400);
-        metrics.errors_total.labels('invalid_request').inc();
-        metrics.requests_total.labels('invalid_request', String(chainId), '400').inc();
-        continue;
+    // Phase 1: Split batch into sub-batches and execute each sequentially
+    const batchResults = new Map<number, { response: JsonRpcResponse; httpStatus: number; durationMs: number }>();
+
+    if (parsed.isBatch) {
+      const subBatches = await splitBatchRequests(parsed.items, {
+        config,
+        portal,
+        chainId,
+        traceparent,
+        requestId: req.id,
+        logger: req.log
+      });
+
+      for (const batch of subBatches) {
+        console.log('Executing batch:', batch);
+        switch (batch.kind) {
+          case 'resolved':
+            batchResults.set(batch.index, {
+              response: batch.response.response,
+              httpStatus: batch.response.httpStatus,
+              durationMs: batch.response.durationMs
+            });
+            break;
+          case 'blocks':
+          case 'tx_by_index':
+          case 'traces':
+          case 'logs': {
+            const portalResults = await executePortalSubBatch(batch, {
+              config,
+              portal,
+              upstream,
+              chainId,
+              traceparent,
+              requestId: req.id,
+              recordPortalHeaders,
+              logger: req.log
+            });
+            for (const [idx, r] of portalResults) {
+              batchResults.set(idx, {
+                response: r.response,
+                httpStatus: r.httpStatus,
+                durationMs: r.durationMs,
+              });
+            }
+            break;
+          }
+          case 'individual': {
+            const startedRequest = performance.now();
+            const { response, httpStatus } = await handleJsonRpc(batch.item.request!, {
+              config,
+              portal,
+              chainId,
+              traceparent,
+              requestId: req.id,
+              logger: req.log,
+              recordPortalHeaders,
+              upstream,
+              requestCache,
+              requestTimeoutMs: config.handlerTimeoutMs,
+              startBlockCache
+            });
+            batchResults.set(batch.index, {
+              response,
+              httpStatus,
+              durationMs: performance.now() - startedRequest
+            });
+            break;
+          }
+        }
       }
-      const request = item.request!;
-      const hasId = 'id' in request;
-      const methodLabel = request.method || 'unknown';
-      const coalescedResponse = coalesced.get(index);
-      let response: JsonRpcResponse;
-      let httpStatus: number;
-      let duration: number;
-      if (coalescedResponse) {
-        response = coalescedResponse.response;
-        httpStatus = coalescedResponse.httpStatus;
-        duration = coalescedResponse.durationMs;
-      } else {
+    }
+
+    // Phase 2: Collect responses and metrics in original order
+    for (const [index, item] of parsed.items.entries()) {
+      if (!parsed.isBatch) {
+        // Single request — handle directly
+        if (item.error) {
+          responses.push(item.error);
+          maxStatus = Math.max(maxStatus, 400);
+          metrics.errors_total.labels('invalid_request').inc();
+          metrics.requests_total.labels('invalid_request', String(chainId), '400').inc();
+          continue;
+        }
+        const request = item.request!;
+        const hasId = 'id' in request;
+        const methodLabel = request.method || 'unknown';
         const startedRequest = performance.now();
-        ({ response, httpStatus } = await handleJsonRpc(request, {
+        const { response, httpStatus } = await handleJsonRpc(request, {
           config,
           portal,
           chainId,
@@ -278,32 +331,53 @@ async function handleRpcRequest(
           requestCache,
           requestTimeoutMs: config.handlerTimeoutMs,
           startBlockCache
-        }));
-        duration = performance.now() - startedRequest;
-      }
-      metrics.rpc_duration_seconds.labels(methodLabel).observe(duration / 1000);
-      if (hasId) {
-        responses.push(response);
-        maxStatus = Math.max(maxStatus, httpStatus);
-      }
-
-      metrics.requests_total.labels(methodLabel, String(chainId), String(httpStatus)).inc();
-      if (hasId && response.error) {
-        const errorCategory = toCategory(response.error.code);
-        metrics.errors_total.labels(errorCategory).inc();
-      }
-      if (parsed.isBatch) {
-        const status = response.error ? 'error' : 'ok';
-        metrics.batch_items_total.labels(status).inc();
-      }
-    }
-
-    if (parsed.isBatch) {
-      for (const item of parsed.items) {
-        if (item.error) {
-          metrics.batch_items_total.labels('error').inc();
+        });
+        const duration = performance.now() - startedRequest;
+        metrics.rpc_duration_seconds.labels(methodLabel).observe(duration / 1000);
+        if (hasId) {
+          responses.push(response);
+          maxStatus = Math.max(maxStatus, httpStatus);
         }
+        metrics.requests_total.labels(methodLabel, String(chainId), String(httpStatus)).inc();
+        if (hasId && response.error) {
+          metrics.errors_total.labels(toCategory(response.error.code)).inc();
+        }
+        continue;
       }
+
+      // Batch request — use pre-computed results
+      const result = batchResults.get(index);
+      if (!result) {
+        continue;
+      }
+
+      console.log(result)
+
+      if (item.error) {
+        // Parse error — always include in batch response
+        responses.push(result.response);
+        maxStatus = Math.max(maxStatus, result.httpStatus);
+        metrics.errors_total.labels('invalid_request').inc();
+        metrics.requests_total.labels('invalid_request', String(chainId), String(result.httpStatus)).inc();
+        metrics.batch_items_total.labels('error').inc();
+        continue;
+      }
+
+      const request = item.request!;
+      const hasId = 'id' in request;
+      const methodLabel = request.method || 'unknown';
+
+      metrics.rpc_duration_seconds.labels(methodLabel).observe(result.durationMs / 1000);
+      if (hasId) {
+        responses.push(result.response);
+        maxStatus = Math.max(maxStatus, result.httpStatus);
+      }
+      metrics.requests_total.labels(methodLabel, String(chainId), String(result.httpStatus)).inc();
+      if (hasId && result.response.error) {
+        metrics.errors_total.labels(toCategory(result.response.error.code)).inc();
+      }
+      const status = result.response.error ? 'error' : 'ok';
+      metrics.batch_items_total.labels(status).inc();
     }
 
     if (responses.length === 0) {
