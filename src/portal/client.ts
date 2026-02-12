@@ -21,6 +21,7 @@ import {
   PortalStreamHeaders
 } from './stream';
 import { applyUnsupportedFields, extractUnknownField, isNegotiableField } from './fields';
+import { npmVersion } from '../version';
 
 export type { PortalStreamHeaders } from './stream';
 
@@ -235,7 +236,8 @@ export class PortalClient {
     const client = new OfficialPortalClient({
       url: baseUrl,
       http: this.httpClient,
-      maxBytes: this.maxStreamBytes
+      maxBytes: this.maxStreamBytes,
+
     });
     this.clientsByBaseUrl.set(baseUrl, client);
     return client;
@@ -243,6 +245,7 @@ export class PortalClient {
 
   private requestHeaders(traceparent?: string, requestId?: string): Record<string, string> {
     const headers: Record<string, string> = {
+      'User-Agent': `@subsquid/evm-rpc-portal:${npmVersion}`
     };
     if (this.apiKey) {
       headers[this.apiKeyHeader] = this.apiKey;
@@ -363,7 +366,6 @@ function recordPortalMetrics(endpoint: string, status: number, startedAt: number
 
 function mapPortalError(err: any) {
   const status = httpStatusFromError(err);
-
   if (status) {
     const bodyText = errorBodyText(err);
     switch (status) {

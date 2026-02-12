@@ -473,11 +473,11 @@ async function executeBlockSubBatch(
       continue;
     }
 
-    const uncles = await fetchUncles(
-      { config: ctx.config, upstream: ctx.upstream, chainId: ctx.chainId, traceparent: ctx.traceparent, requestId: ctx.requestId, logger: ctx.logger },
-      item.blockNumber
-    );
-    const result = convertBlockToRpc(block, item.fullTx, uncles);
+    // const uncles = await fetchUncles(
+    //   { config: ctx.config, upstream: ctx.upstream, chainId: ctx.chainId, traceparent: ctx.traceparent, requestId: ctx.requestId, logger: ctx.logger },
+    //   item.blockNumber
+    // );
+    const result = convertBlockToRpc(block, item.fullTx, []);
     results.set(item.index, {
       response: successResponse(responseId(item.request), result),
       httpStatus: 200,
@@ -643,7 +643,7 @@ async function executeLogsSubBatch(
       ctx.traceparent, ctx.recordPortalHeaders, ctx.requestId
     );
   } catch (err) {
-    const rpcError = serverError('internal error');
+    const rpcError = err instanceof RpcError ? err : serverError('internal error');
     results.set(batch.index, {
       response: errorResponse(responseId(batch.request), rpcError),
       httpStatus: rpcError.httpStatus,

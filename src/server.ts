@@ -117,6 +117,7 @@ export async function buildServer(config: Config, options?: BuildServerOptions):
     req.log.error({ err }, 'unexpected error');
     const rpcError = normalizeError(err);
     metrics.errors_total.labels(rpcError.category).inc();
+
     reply.code(rpcError.httpStatus).send({
       jsonrpc: '2.0',
       id: null,
