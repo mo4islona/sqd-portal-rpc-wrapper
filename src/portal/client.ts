@@ -18,9 +18,6 @@ import { PortalHeadResponse, PortalMetadataResponse, PortalRequest, PortalBlockR
 import { errorBodyText, FetchHttpClient, httpStatusFromError } from './http';
 import {
   collectStream,
-  ensureStreamSegment,
-  filterBlocksInRange,
-  lastBlockNumber,
   PortalStreamHeaders
 } from './stream';
 import { applyUnsupportedFields, extractUnknownField, isNegotiableField } from './fields';
@@ -145,21 +142,14 @@ export class PortalClient {
           headers,
           finalized,
           onHeaders,
-          typeof effectiveRequest.toBlock === 'number'
         );
         const status = blocks.length === 0 ? 204 : 200;
 
         recordPortalMetrics(endpoint, status, started);
         this.recordBreaker(status);
         this.logger?.debug?.({ endpoint, status }, 'portal response');
-        return this.ensureCompleteRange(
-          client,
-          effectiveRequest,
-          blocks,
-          headers,
-          finalized,
-          onHeaders
-        );
+
+        return blocks;
       } catch (err) {
         const status = httpStatusFromError(err);
         if (status) {
@@ -249,7 +239,8 @@ export class PortalClient {
   }
 
   private requestHeaders(traceparent?: string, requestId?: string): Record<string, string> {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = {
+    };
     if (this.apiKey) {
       headers[this.apiKeyHeader] = this.apiKey;
     }
@@ -315,48 +306,6 @@ export class PortalClient {
     const set = new Set<string>();
     this.unsupportedFieldsByBaseUrl.set(baseUrl, set);
     return set;
-  }
-
-  private async ensureCompleteRange(
-    client: OfficialPortalClient,
-    request: PortalRequest,
-    blocks: PortalBlockResponse[],
-    headers: Record<string, string>,
-    finalized: boolean,
-    onHeaders?: (headers: PortalStreamHeaders) => void
-  ): Promise<PortalBlockResponse[]> {
-    if (typeof request.toBlock !== 'number') {
-      return blocks;
-    }
-    const bounded = filterBlocksInRange(blocks, request.fromBlock, request.toBlock);
-    const last = lastBlockNumber(bounded);
-    if (last === undefined || last >= request.toBlock) {
-      return bounded;
-    }
-    const enforceContinuity = !request.logs || request.includeAllBlocks === true;
-    if (!enforceContinuity) {
-      return bounded;
-    }
-    const collected = [...bounded];
-    let nextFrom = last + 1;
-    let nextLast = last;
-    while (nextLast < request.toBlock) {
-      const nextRequest: PortalRequest = { ...request, fromBlock: nextFrom, toBlock: request.toBlock };
-      const nextBlocks = await ensureStreamSegment(client, nextRequest, headers, finalized, onHeaders);
-      const nextBounded = filterBlocksInRange(nextBlocks, nextFrom, request.toBlock);
-      const lastInNext = lastBlockNumber(nextBounded);
-      if (lastInNext === undefined || lastInNext <= nextLast) {
-        this.logger?.warn?.(
-          { endpoint: finalized ? 'finalized-stream' : 'stream', fromBlock: nextFrom, toBlock: request.toBlock },
-          'portal stream interrupted'
-        );
-        throw unavailableError('portal stream interrupted');
-      }
-      collected.push(...nextBounded);
-      nextLast = lastInNext;
-      nextFrom = nextLast + 1;
-    }
-    return collected;
   }
 
   private isBreakerOpen(): boolean {
