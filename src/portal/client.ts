@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { PortalClient as OfficialPortalClient, isForkException } from '@subsquid/portal-client';
-import { HttpClient, HttpError } from '@subsquid/http-client';
+import { HttpClient } from '@subsquid/http-client';
 import { Config } from '../config';
 import { metrics } from '../metrics';
 import {
@@ -184,7 +184,10 @@ export class PortalClient {
             }
           }
         }
-        this.logger?.warn?.({ endpoint, error: err instanceof Error ? err.message : String(err) }, 'portal error');
+        this.logger?.warn?.({
+          endpoint,
+          error: err instanceof Error ? err.message : String(err)
+        }, 'portal error');
         throw mapPortalError(err);
       }
     }
@@ -358,9 +361,10 @@ function recordPortalMetrics(endpoint: string, status: number, startedAt: number
   metrics.portal_latency_seconds.labels(endpoint).observe(elapsed);
 }
 
-function mapPortalError(err: unknown) {
-  if (err instanceof HttpError) {
-    const status = err.response.status;
+function mapPortalError(err: any) {
+  const status = httpStatusFromError(err);
+
+  if (status) {
     const bodyText = errorBodyText(err);
     switch (status) {
       case 400:
@@ -381,6 +385,7 @@ function mapPortalError(err: unknown) {
         return serverError('server error');
     }
   }
+
   return normalizeError(err);
 }
 

@@ -180,6 +180,7 @@ export function normalizeError(err: unknown): RpcError {
   if (err instanceof RpcError) {
     return err;
   }
+
   const message = err instanceof Error ? err.message : 'server error';
   return serverError(message);
 }

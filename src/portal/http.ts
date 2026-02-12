@@ -68,10 +68,12 @@ export class FetchHttpClient extends HttpClient {
   }
 }
 
-export function httpStatusFromError(err: unknown): number | undefined {
-  if (err instanceof HttpError) {
+export function httpStatusFromError(err: any): number | undefined {
+  if(err.response.status) {
     return err.response.status;
   }
+
+
   return undefined;
 }
 
