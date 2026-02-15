@@ -303,14 +303,14 @@ const allTraceFields = {
 
 const EIP_FORKS: Record<number, { london?: number; cancun?: number }> = {
   1: { london: 12_965_000, cancun: 19_426_587 }, // Ethereum mainnet
-  10: { london: 0, cancun: 0 }, // Optimism
-  56: { london: 0, cancun: 0 }, // BSC
+  11155111: { london: 0, cancun: 7_000_000 }, // Ethereum Sepolia
+  10: { london: 0, cancun: 130_000_000 }, // Optimism
+  11155420: { london: 0, cancun: 20_000_000 }, // Optimism Sepolia
   100: { london: 0, cancun: 0 }, // Gnosis
-  137: { london: 0, cancun: 0 }, // Polygon
+  137: { london: 0, cancun: 65_000_000 }, // Polygon
   8453: { london: 0, cancun: 0 }, // Base
-  42161: { london: 0, cancun: 5_187_023 }, // Arbitrum One
-  43114: { london: 0, cancun: 0 }, // Avalanche
-  11155111: { london: 0, cancun: 5_187_023 }, // Sepolia
+  42161: { london: 0, cancun: 270_000_000 }, // Arbitrum One
+  421614: { london: 0, cancun: 90_000_000 }, // Arbitrum Sepolia
 }
 
 function copyMap<T extends Record<string, boolean>>(input: T): T {
@@ -325,13 +325,10 @@ export function allBlockFieldsSelection(chainId: number, fromBlock: number) {
       delete (fields as Record<string, boolean>).baseFeePerGas
     }
     if (forks.cancun !== undefined && fromBlock < forks.cancun) {
-      console.log('Removing blobGasUsed and excessBlobGas from block fields selection due to pre-Cancun block')
       delete (fields as Record<string, boolean>).blobGasUsed
       delete (fields as Record<string, boolean>).excessBlobGas
     }
   }
-  console.log(`Using block fields selection for chainId ${chainId} fromBlock ${fromBlock}:`, fields)
-  console.log(forks, forks.cancun !== undefined, forks.london !== undefined)
   return fields
 }
 
