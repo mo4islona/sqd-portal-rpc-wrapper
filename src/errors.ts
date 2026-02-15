@@ -8,26 +8,26 @@ export type ErrorCategory =
   | 'unavailable'
   | 'not_found'
   | 'overload'
-  | 'server_error';
+  | 'server_error'
 
 export class RpcError extends Error {
-  readonly code: number;
-  readonly httpStatus: number;
-  readonly data?: Record<string, unknown>;
-  readonly category: ErrorCategory;
+  readonly code: number
+  readonly httpStatus: number
+  readonly data?: Record<string, unknown>
+  readonly category: ErrorCategory
 
   constructor(opts: {
-    message: string;
-    code: number;
-    httpStatus: number;
-    category: ErrorCategory;
-    data?: Record<string, unknown>;
+    message: string
+    code: number
+    httpStatus: number
+    category: ErrorCategory
+    data?: Record<string, unknown>
   }) {
-    super(opts.message);
-    this.code = opts.code;
-    this.httpStatus = opts.httpStatus;
-    this.category = opts.category;
-    this.data = opts.data;
+    super(opts.message)
+    this.code = opts.code
+    this.httpStatus = opts.httpStatus
+    this.category = opts.category
+    this.data = opts.data
   }
 }
 
@@ -37,8 +37,8 @@ export function invalidParams(message: string, data?: Record<string, unknown>): 
     code: -32602,
     httpStatus: 400,
     category: 'invalid_params',
-    data
-  });
+    data,
+  })
 }
 
 export function invalidRequest(message = 'invalid request'): RpcError {
@@ -46,8 +46,8 @@ export function invalidRequest(message = 'invalid request'): RpcError {
     message,
     code: -32600,
     httpStatus: 400,
-    category: 'invalid_request'
-  });
+    category: 'invalid_request',
+  })
 }
 
 export function parseError(message = 'parse error'): RpcError {
@@ -55,8 +55,8 @@ export function parseError(message = 'parse error'): RpcError {
     message,
     code: -32700,
     httpStatus: 400,
-    category: 'invalid_request'
-  });
+    category: 'invalid_request',
+  })
 }
 
 export function methodNotSupported(message = 'method not supported'): RpcError {
@@ -64,12 +64,12 @@ export function methodNotSupported(message = 'method not supported'): RpcError {
     message,
     code: -32601,
     httpStatus: 404,
-    category: 'unsupported_method'
-  });
+    category: 'unsupported_method',
+  })
 }
 
 export function pendingBlockError(): RpcError {
-  return invalidParams('pending block not found');
+  return invalidParams('pending block not found')
 }
 
 export function rangeTooLargeError(maxRange: number): RpcError {
@@ -77,8 +77,8 @@ export function rangeTooLargeError(maxRange: number): RpcError {
     message: `range too large; max block range ${maxRange}`,
     code: -32012,
     httpStatus: 400,
-    category: 'invalid_params'
-  });
+    category: 'invalid_params',
+  })
 }
 
 export function tooManyAddressesError(): RpcError {
@@ -86,8 +86,8 @@ export function tooManyAddressesError(): RpcError {
     message: 'specify less number of address',
     code: -32012,
     httpStatus: 400,
-    category: 'invalid_params'
-  });
+    category: 'invalid_params',
+  })
 }
 
 export function timeoutError(message = 'request timeout'): RpcError {
@@ -95,8 +95,8 @@ export function timeoutError(message = 'request timeout'): RpcError {
     message,
     code: -32000,
     httpStatus: 504,
-    category: 'server_error'
-  });
+    category: 'server_error',
+  })
 }
 
 export function missingDataError(message = 'block not found'): RpcError {
@@ -104,8 +104,8 @@ export function missingDataError(message = 'block not found'): RpcError {
     message,
     code: -32014,
     httpStatus: 404,
-    category: 'not_found'
-  });
+    category: 'not_found',
+  })
 }
 
 export function rateLimitError(message = 'Too Many Requests'): RpcError {
@@ -113,8 +113,8 @@ export function rateLimitError(message = 'Too Many Requests'): RpcError {
     message,
     code: -32005,
     httpStatus: 429,
-    category: 'rate_limit'
-  });
+    category: 'rate_limit',
+  })
 }
 
 export function unauthorizedError(): RpcError {
@@ -122,22 +122,22 @@ export function unauthorizedError(): RpcError {
     message: 'unauthorized',
     code: -32016,
     httpStatus: 401,
-    category: 'unauthorized'
-  });
+    category: 'unauthorized',
+  })
 }
 
 export function conflictError(previousBlocks?: unknown[]): RpcError {
-  const data: Record<string, unknown> = { retryable: true };
+  const data: Record<string, unknown> = { retryable: true }
   if (previousBlocks && previousBlocks.length > 0) {
-    data.previousBlocks = previousBlocks;
+    data.previousBlocks = previousBlocks
   }
   return new RpcError({
     message: 'conflict',
     code: -32603,
     httpStatus: 409,
     category: 'conflict',
-    data
-  });
+    data,
+  })
 }
 
 export function unavailableError(message = 'unavailable'): RpcError {
@@ -145,12 +145,8 @@ export function unavailableError(message = 'unavailable'): RpcError {
     message,
     code: -32603,
     httpStatus: 503,
-    category: 'unavailable'
-  });
-}
-
-export function overloadError(): RpcError {
-  return unavailableError('unavailable');
+    category: 'unavailable',
+  })
 }
 
 export function serverError(message = 'server error'): RpcError {
@@ -158,8 +154,8 @@ export function serverError(message = 'server error'): RpcError {
     message,
     code: -32603,
     httpStatus: 500,
-    category: 'server_error'
-  });
+    category: 'server_error',
+  })
 }
 
 export function portalUnsupportedFieldError(field: string): RpcError {
@@ -168,19 +164,19 @@ export function portalUnsupportedFieldError(field: string): RpcError {
     code: -32603,
     httpStatus: 500,
     category: 'server_error',
-    data: { requiredField: field }
-  });
+    data: { requiredField: field },
+  })
 }
 
 export function isPortalUnsupportedFieldError(err: unknown): err is RpcError {
-  return err instanceof RpcError && typeof err.data?.requiredField === 'string';
+  return err instanceof RpcError && typeof err.data?.requiredField === 'string'
 }
 
 export function normalizeError(err: unknown): RpcError {
   if (err instanceof RpcError) {
-    return err;
+    return err
   }
 
-  const message = err instanceof Error ? err.message : 'server error';
-  return serverError(message);
+  const message = err instanceof Error ? err.message : 'server error'
+  return serverError(message)
 }

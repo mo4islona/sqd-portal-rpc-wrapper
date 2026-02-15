@@ -78,7 +78,6 @@ export class PortalClient {
   async fetchHead(
     baseUrl: string,
     finalized: boolean,
-    traceparent?: string,
     requestId?: string,
   ): Promise<{ head: PortalHeadResponse; finalizedAvailable: boolean }> {
     if (this.isBreakerOpen()) {
@@ -86,7 +85,7 @@ export class PortalClient {
       throw unavailableError('portal circuit open')
     }
     const client = this.getPortalClient(baseUrl)
-    const headers = this.requestHeaders(traceparent, requestId)
+    const headers = this.requestHeaders(requestId)
     const endpoint = finalized ? 'finalized-head' : 'head'
     const started = performance.now()
 
@@ -110,7 +109,7 @@ export class PortalClient {
       if (finalized && status === 404) {
         metrics.finalized_fallback_total.inc()
         this.logger?.warn?.({ endpoint, status }, 'finalized head not found, fallback to non-finalized')
-        return this.fetchHead(baseUrl, false, traceparent, requestId)
+        return this.fetchHead(baseUrl, false, requestId)
       }
       this.logger?.warn?.(
         {
@@ -127,7 +126,6 @@ export class PortalClient {
     baseUrl: string,
     finalized: boolean,
     request: PortalRequest,
-    traceparent?: string,
     onHeaders?: (headers: PortalStreamHeaders) => void,
     requestId?: string,
   ): Promise<PortalBlockResponse[]> {
@@ -136,7 +134,7 @@ export class PortalClient {
       throw unavailableError('portal circuit open')
     }
     const client = this.getPortalClient(baseUrl)
-    const headers = this.requestHeaders(traceparent, requestId)
+    const headers = this.requestHeaders(requestId)
     const unsupportedFields = this.getUnsupportedFields(baseUrl)
     let effectiveRequest = applyUnsupportedFields(request, unsupportedFields)
 
@@ -163,7 +161,7 @@ export class PortalClient {
         if (finalized && status === 404) {
           metrics.finalized_fallback_total.inc()
           this.logger?.warn?.({ endpoint, status }, 'finalized stream not found, fallback to non-finalized')
-          return this.streamBlocks(baseUrl, false, effectiveRequest, traceparent, onHeaders, requestId)
+          return this.streamBlocks(baseUrl, false, effectiveRequest, onHeaders, requestId)
         }
         if (isForkException(err)) {
           throw conflictError(err.previousBlocks)
@@ -200,7 +198,7 @@ export class PortalClient {
     throw serverError('portal field negotiation failed')
   }
 
-  async getMetadata(baseUrl: string, traceparent?: string, requestId?: string): Promise<PortalMetadataResponse> {
+  async getMetadata(baseUrl: string, requestId?: string): Promise<PortalMetadataResponse> {
     if (this.isBreakerOpen()) {
       this.logger?.warn?.({ endpoint: 'metadata' }, 'portal circuit open')
       throw unavailableError('portal circuit open')
@@ -212,11 +210,11 @@ export class PortalClient {
       if (age < this.metadataTtlMs) {
         return cached.data
       }
-      this.refreshMetadata(baseUrl, traceparent, requestId)
+      this.refreshMetadata(baseUrl, requestId)
       return cached.data
     }
 
-    const data = await this.fetchMetadata(baseUrl, traceparent, requestId)
+    const data = await this.fetchMetadata(baseUrl, requestId)
     this.metadataCache.set(baseUrl, { data, fetchedAt: now })
     return data
   }
@@ -246,7 +244,7 @@ export class PortalClient {
     return client
   }
 
-  private requestHeaders(traceparent?: string, requestId?: string): Record<string, string> {
+  private requestHeaders(requestId?: string): Record<string, string> {
     const headers: Record<string, string> = {
       'User-Agent': `@subsquid/evm-rpc-portal:${npmVersion}`,
       'Accept-Encoding': 'gzip, zstd',
@@ -254,22 +252,15 @@ export class PortalClient {
     if (this.apiKey) {
       headers[this.apiKeyHeader] = this.apiKey
     }
-    if (traceparent) {
-      headers.traceparent = traceparent
-    }
     if (requestId) {
       headers['X-Request-Id'] = requestId
     }
     return headers
   }
 
-  private async fetchMetadata(
-    baseUrl: string,
-    traceparent?: string,
-    requestId?: string,
-  ): Promise<PortalMetadataResponse> {
+  private async fetchMetadata(baseUrl: string, requestId?: string): Promise<PortalMetadataResponse> {
     const url = `${baseUrl}/metadata`
-    const headers = this.requestHeaders(traceparent, requestId)
+    const headers = this.requestHeaders(requestId)
     const started = performance.now()
     try {
       const response = await this.httpClient.request<PortalMetadataResponse>('GET', url, {
@@ -301,11 +292,11 @@ export class PortalClient {
     }
   }
 
-  private refreshMetadata(baseUrl: string, traceparent?: string, requestId?: string) {
+  private refreshMetadata(baseUrl: string, requestId?: string) {
     if (this.metadataRefreshInFlight.has(baseUrl)) {
       return
     }
-    const refresh = this.fetchMetadata(baseUrl, traceparent, requestId)
+    const refresh = this.fetchMetadata(baseUrl, requestId)
       .then((data) => {
         this.metadataCache.set(baseUrl, { data, fetchedAt: Date.now() })
       })

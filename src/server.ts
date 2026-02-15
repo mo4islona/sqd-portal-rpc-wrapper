@@ -6,15 +6,7 @@ import { gunzip } from 'node:zlib'
 import fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 
 import { Config } from './config'
-import {
-  RpcError,
-  invalidParams,
-  invalidRequest,
-  normalizeError,
-  overloadError,
-  parseError,
-  unauthorizedError,
-} from './errors'
+import { RpcError, invalidParams, invalidRequest, normalizeError, parseError, unauthorizedError } from './errors'
 import { JsonRpcResponse, parseJsonRpcPayload } from './jsonrpc'
 import { metrics, metricsPayload } from './metrics'
 import type { PortalStreamHeaders } from './portal/client'
@@ -23,7 +15,6 @@ import { defaultDatasetMap } from './portal/mapping'
 import { executePortalSubBatch, splitBatchRequests } from './rpc/batch'
 import { handleJsonRpc } from './rpc/handlers'
 import { UpstreamRpcClient } from './rpc/upstream'
-import { ConcurrencyLimiter } from './util/concurrency'
 
 const gunzipAsync = promisify(gunzip)
 
@@ -132,7 +123,6 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
     fetchImpl: fetch,
   })
   const upstream = new UpstreamRpcClient(config, { logger: server.log })
-  const limiter = new ConcurrencyLimiter(config.maxConcurrentRequests)
 
   await prefetchMetadata(server, portal, config)
 
@@ -161,10 +151,10 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
       if (headerChainId === null) {
         return replyInvalidChainId(reply)
       }
-      return handleRpcRequest(req, reply, config, portal, upstream, limiter, headerChainId)
+      return handleRpcRequest(req, reply, config, portal, upstream, headerChainId)
     }
     const chainId = config.portalChainId ?? extractSingleChainIdFromMap(config)
-    return handleRpcRequest(req, reply, config, portal, upstream, limiter, chainId)
+    return handleRpcRequest(req, reply, config, portal, upstream, chainId)
   })
 
   server.post('/v1/evm/:chainId', async (req, reply) => {
@@ -175,7 +165,7 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
     const chainId = extractChainId(params.chainId)
     if (chainId === null) return replyInvalidChainId(reply)
 
-    return handleRpcRequest(req, reply, config, portal, upstream, limiter, chainId)
+    return handleRpcRequest(req, reply, config, portal, upstream, chainId)
   })
 
   return server
@@ -187,20 +177,8 @@ async function handleRpcRequest(
   config: Config,
   portal: PortalClient,
   upstream: UpstreamRpcClient,
-  limiter: ConcurrencyLimiter,
   chainId: number,
 ) {
-  const release = limiter.tryAcquire()
-  if (!release) {
-    const err = overloadError()
-    metrics.errors_total.labels(err.category).inc()
-    return reply.code(err.httpStatus).send({
-      jsonrpc: '2.0',
-      id: null,
-      error: { code: err.code, message: err.message },
-    })
-  }
-
   try {
     const startedAt = Date.now()
     if (config.wrapperApiKey) {
@@ -217,7 +195,6 @@ async function handleRpcRequest(
       }
     }
 
-    const traceparent = typeof req.headers.traceparent === 'string' ? req.headers.traceparent : undefined
     const payload = req.body
     const parsed = parseJsonRpcPayload(payload)
     if (parsed.isBatch) {
@@ -246,7 +223,6 @@ async function handleRpcRequest(
         config,
         portal,
         chainId,
-        traceparent,
         requestId: req.id,
         logger: req.log,
       })
@@ -269,7 +245,6 @@ async function handleRpcRequest(
               portal,
               upstream,
               chainId,
-              traceparent,
               requestId: req.id,
               recordPortalHeaders,
               logger: req.log,
@@ -289,7 +264,6 @@ async function handleRpcRequest(
               config,
               portal,
               chainId,
-              traceparent,
               requestId: req.id,
               logger: req.log,
               recordPortalHeaders,
@@ -328,7 +302,6 @@ async function handleRpcRequest(
           config,
           portal,
           chainId,
-          traceparent,
           requestId: req.id,
           logger: req.log,
           recordPortalHeaders,
@@ -412,8 +385,6 @@ async function handleRpcRequest(
       id: null,
       error: { code: rpcError.code, message: rpcError.message },
     })
-  } finally {
-    release()
   }
 }
 

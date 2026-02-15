@@ -20,7 +20,6 @@ import {
   txHashOnlyFieldsSelection,
 } from '../portal/types'
 import { convertBlockToRpc, convertLogToRpc, convertTraceToRpc, convertTxToRpc } from './conversion'
-import { fetchUncles } from './uncles'
 import { UpstreamRpcClient } from './upstream'
 import { assertArray, assertObject, parseBlockNumber, parseLogFilter, parseTransactionIndex } from './validation'
 
@@ -118,7 +117,7 @@ export async function splitBatchRequests(items: ParsedJsonRpcItem[], ctx: SplitC
 
   let startBlock: number | undefined
   try {
-    const metadata = await ctx.portal.getMetadata(baseUrl, ctx.traceparent, ctx.requestId)
+    const metadata = await ctx.portal.getMetadata(baseUrl, ctx.requestId)
     startBlock = typeof metadata.start_block === 'number' ? metadata.start_block : undefined
   } catch (err) {
     ctx.logger?.warn?.({ chainId: ctx.chainId, error: String(err) }, 'batch split skipped (metadata)')
@@ -339,7 +338,6 @@ export async function splitBatchRequests(items: ParsedJsonRpcItem[], ctx: SplitC
             baseUrl,
             request.params[0] as Record<string, unknown>,
             ctx.config,
-            ctx.traceparent,
             ctx.requestId,
           )
         } catch (err) {
@@ -440,7 +438,7 @@ async function executeBlockSubBatch(
     toBlock: batch.toBlock,
     includeAllBlocks: ctx.config.portalIncludeAllBlocks || undefined,
     fields: {
-      block: allBlockFieldsSelection(),
+      block: allBlockFieldsSelection(ctx.chainId, batch.fromBlock),
       transaction: batch.fullTx ? allTransactionFieldsSelection() : txHashOnlyFieldsSelection(),
     },
     transactions: [{}],
@@ -456,7 +454,6 @@ async function executeBlockSubBatch(
       baseUrl,
       batch.useFinalized,
       portalReq,
-      ctx.traceparent,
       ctx.recordPortalHeaders,
       ctx.requestId,
     )
@@ -525,7 +522,6 @@ async function executeTxByIndexSubBatch(
       baseUrl,
       batch.useFinalized,
       portalReq,
-      ctx.traceparent,
       ctx.recordPortalHeaders,
       ctx.requestId,
     )
@@ -591,7 +587,6 @@ async function executeTraceSubBatch(
       baseUrl,
       batch.useFinalized,
       portalReq,
-      ctx.traceparent,
       ctx.recordPortalHeaders,
       ctx.requestId,
     )
@@ -659,7 +654,6 @@ async function executeLogsSubBatch(
       baseUrl,
       batch.useFinalized,
       portalReq,
-      ctx.traceparent,
       ctx.recordPortalHeaders,
       ctx.requestId,
     )
@@ -724,7 +718,7 @@ async function readBlockTag(
   if (cached) {
     return cached
   }
-  const blockTag = await parseBlockNumber(ctx.portal, baseUrl, value, ctx.config, ctx.traceparent, ctx.requestId)
+  const blockTag = await parseBlockNumber(ctx.portal, baseUrl, value, ctx.config, ctx.requestId)
   cache.set(cacheKey, blockTag)
   return blockTag
 }
