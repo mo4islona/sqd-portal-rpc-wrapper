@@ -145,22 +145,7 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
     reply.send(payload)
   })
 
-  server.post('/', async (req, reply) => {
-    if (config.serviceMode === 'multi') {
-      const headerChainId = extractChainId(req.headers['x-chain-id'])
-      if (headerChainId === null) {
-        return replyInvalidChainId(reply)
-      }
-      return handleRpcRequest(req, reply, config, portal, upstream, headerChainId)
-    }
-    const chainId = config.portalChainId ?? extractSingleChainIdFromMap(config)
-    return handleRpcRequest(req, reply, config, portal, upstream, chainId)
-  })
-
   server.post('/v1/evm/:chainId', async (req, reply) => {
-    if (config.serviceMode !== 'multi') {
-      return reply.code(404).send({})
-    }
     const params = req.params as { chainId?: string }
     const chainId = extractChainId(params.chainId)
     if (chainId === null) return replyInvalidChainId(reply)
@@ -551,9 +536,9 @@ async function checkPortalReady(config: Config, portal: PortalClient, requestId?
   await Promise.all(
     entries.map(async ([_chainId, dataset]) => {
       const baseUrl = portal.buildDatasetBaseUrl(dataset)
-      const metadata = await portal.getMetadata(baseUrl, undefined, requestId)
+      const metadata = await portal.getMetadata(baseUrl, requestId)
       resolveRealtimeEnabled(metadata, config.portalRealtimeMode)
-      await portal.fetchHead(baseUrl, false, undefined, requestId)
+      await portal.fetchHead(baseUrl, false, requestId)
     }),
   )
 }
@@ -591,7 +576,7 @@ async function buildCapabilities(
 
   return {
     service: { name: 'sqd-portal-rpc-wrapper', version: process.env.npm_package_version || '0.1.0' },
-    mode: config.serviceMode,
+    mode: 'multi',
     methods: resolveAdvertisedMethods(config),
     chains,
     portalEndpoints: portalEndpointsTemplate(config),
@@ -625,14 +610,6 @@ function portalEndpointsTemplate(config: Config) {
 }
 
 function resolveChainDatasets(config: Config): Record<string, string> {
-  if (config.serviceMode === 'single') {
-    const chainId = config.portalChainId ?? extractSingleChainIdFromMap(config)
-    const dataset = config.portalDataset ?? config.portalDatasetMap[String(chainId)]
-    if (!dataset) {
-      return {}
-    }
-    return { [String(chainId)]: dataset }
-  }
   if (config.portalUseDefaultDatasets) {
     return { ...defaultDatasetMap(), ...config.portalDatasetMap }
   }

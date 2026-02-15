@@ -1,4 +1,4 @@
-import { Config } from '../config';
+import { Config } from '../config'
 
 const defaultChainToDataset: Record<string, string> = {
   '1': 'ethereum-mainnet',
@@ -19,27 +19,24 @@ const defaultChainToDataset: Record<string, string> = {
   '11155111': 'ethereum-sepolia',
   '84532': 'base-sepolia',
   '421614': 'arbitrum-sepolia',
-  '11155420': 'optimism-sepolia'
-};
+  '11155420': 'optimism-sepolia',
+}
 
 export function resolveDataset(chainId: number, config: Config): string | null {
-  if (config.serviceMode === 'single' && config.portalDataset) {
-    return config.portalDataset;
-  }
-  const key = String(chainId);
+  const key = String(chainId)
   if (config.portalDatasetMap[key]) {
-    return config.portalDatasetMap[key];
+    return config.portalDatasetMap[key]
   }
   if (config.portalUseDefaultDatasets && defaultChainToDataset[key]) {
-    return defaultChainToDataset[key];
+    return defaultChainToDataset[key]
   }
-  return null;
+  return null
 }
 
 export function supportedChainIds(): number[] {
-  return Object.keys(defaultChainToDataset).map((v) => Number(v));
+  return Object.keys(defaultChainToDataset).map((v) => Number(v))
 }
 
 export function defaultDatasetMap(): Record<string, string> {
-  return { ...defaultChainToDataset };
+  return { ...defaultChainToDataset }
 }
